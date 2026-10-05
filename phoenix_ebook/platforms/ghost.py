@@ -53,5 +53,8 @@ class GhostPlatform(Platform):
             html=post.get("html") or "",
             authors=authors,
             published_at=post.get("published_at"),
+            feature_image=post.get("feature_image") or None,
+            feature_image_alt=post.get("feature_image_alt") or None,
+            feature_image_caption=post.get("feature_image_caption") or None,
             raw=post,
         )

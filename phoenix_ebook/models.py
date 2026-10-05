@@ -13,6 +13,9 @@ class Post:
     html: str
     authors: list[str] = field(default_factory=list)
     published_at: str | None = None
+    feature_image: str | None = None  # lead image URL, shown above the post body
+    feature_image_alt: str | None = None
+    feature_image_caption: str | None = None  # HTML
     raw: dict[str, Any] = field(default_factory=dict)
 
 

@@ -77,6 +77,27 @@ def _remove_image(img) -> None:
         figure.decompose()
 
 
+def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
+    """Put the post's feature image at the top of its content, as a <figure>.
+
+    Inserted before cleaning and image handling so it gets the same treatment
+    as body images (fetch, validation, optimization, failure reporting).
+    """
+    if not post.feature_image:
+        return
+    resolve = (lambda u: urljoin(image_base_url, u)) if image_base_url else (lambda u: u)
+    url = resolve(post.feature_image)
+    if any(resolve(img.get("src", "")) == url for img in soup.find_all("img")):
+        return
+    figure = soup.new_tag("figure")
+    figure.append(soup.new_tag("img", src=post.feature_image, alt=post.feature_image_alt or ""))
+    if post.feature_image_caption:
+        caption = soup.new_tag("figcaption")
+        caption.append(BeautifulSoup(post.feature_image_caption, "html.parser"))
+        figure.append(caption)
+    soup.insert(0, figure)
+
+
 def build(
     spec: BookSpec,
     posts: Iterable[Post],
@@ -181,6 +202,7 @@ def build(
     for post in posts:
         chapter_slug = sanitize_filename(post.slug)
         soup = BeautifulSoup(post.html, "html.parser")
+        _insert_feature_image(soup, post, image_base_url)
         processor.clean(soup, post)
         display_title = processor.display_title(post)
 
