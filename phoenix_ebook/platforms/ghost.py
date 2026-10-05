@@ -5,10 +5,12 @@ import hashlib
 import hmac
 import json
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
-from phoenix_ebook.models import Post
+from phoenix_ebook.models import Author, Post
 from phoenix_ebook.platforms.base import Platform, register_platform
 
 
@@ -31,6 +33,9 @@ def make_token(admin_key: str) -> str:
 class GhostPlatform(Platform):
     name = "ghost"
 
+    def __init__(self) -> None:
+        self._timezones: dict[str, ZoneInfo | None] = {}  # site url -> timezone
+
     def fetch_post(self, session: requests.Session, url: str, secret: str, slug: str) -> Post:
         token = make_token(secret)
         r = session.get(
@@ -45,16 +50,39 @@ class GhostPlatform(Platform):
             raise RuntimeError(data["errors"])
         post = data["posts"][0]
 
-        authors = [a.get("name") for a in (post.get("authors") or []) if a.get("name")]
+        authors = [
+            Author(name=a["name"], url=a.get("url") or None)
+            for a in (post.get("authors") or []) if a.get("name")
+        ]
 
         return Post(
             slug=post.get("slug") or slug,
             title=post.get("title") or slug,
             html=post.get("html") or "",
             authors=authors,
-            published_at=post.get("published_at"),
+            published_at=self._localize(session, url, post.get("published_at")),
             feature_image=post.get("feature_image") or None,
             feature_image_alt=post.get("feature_image_alt") or None,
             feature_image_caption=post.get("feature_image_caption") or None,
             raw=post,
         )
+
+    def _localize(self, session: requests.Session, url: str, timestamp: str | None) -> str | None:
+        """Convert a UTC timestamp to the site's timezone, so dates match the site."""
+        if not timestamp:
+            return timestamp
+        tz = self._site_timezone(session, url)
+        if tz is None:
+            return timestamp
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(tz).isoformat()
+
+    def _site_timezone(self, session: requests.Session, url: str) -> ZoneInfo | None:
+        cache = self._timezones
+        if url not in cache:
+            try:
+                r = session.get(f"{url.rstrip('/')}/ghost/api/admin/site/", timeout=15)
+                r.raise_for_status()
+                cache[url] = ZoneInfo(r.json()["site"]["timezone"])
+            except (requests.RequestException, KeyError, ValueError, ZoneInfoNotFoundError):
+                cache[url] = None  # fall back to UTC dates
+        return cache[url]

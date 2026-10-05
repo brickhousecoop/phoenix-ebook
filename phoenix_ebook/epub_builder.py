@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import io
 import os
 import re
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urljoin, urlparse
@@ -15,7 +17,7 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
-from phoenix_ebook.models import BookSpec, BuildProblem, BuildResult, Post
+from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
 from phoenix_ebook.processors.base import HtmlProcessor
 
 
@@ -77,6 +79,45 @@ def _remove_image(img) -> None:
         figure.decompose()
 
 
+FEATURE_MARK = "data-feature-image"
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _format_date(timestamp: str | None) -> str | None:
+    """'2026-08-24T20:04:00-04:00' -> '24 Aug 2026' (the date as written, no tz shift)."""
+    if not timestamp:
+        return None
+    try:
+        d = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return f"{d.day:02d} {_MONTHS[d.month - 1]} {d.year}"
+
+
+def _byline(authors: list[Author]) -> str | None:
+    if not authors:
+        return None
+    names = [
+        f'<a href="{html.escape(a.url)}">{html.escape(a.name)}</a>' if a.url else html.escape(a.name)
+        for a in authors
+    ]
+    joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return f"By {joined}"
+
+
+def _article_header(post: Post, feature_figure: str) -> str:
+    parts = ["<header>"]
+    if date := _format_date(post.published_at):
+        parts.append(f'<p class="date">{date}</p>')
+    parts.append(f"<h1>{html.escape(post.title)}</h1>")
+    if byline := _byline(post.authors):
+        parts.append(f'<p class="byline">{byline}</p>')
+    if feature_figure:
+        parts.append(feature_figure)
+    parts.append("</header>")
+    return "\n".join(parts)
+
+
 def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
     """Put the post's feature image at the top of its content, as a <figure>.
 
@@ -89,7 +130,7 @@ def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
     url = resolve(post.feature_image)
     if any(resolve(img.get("src", "")) == url for img in soup.find_all("img")):
         return
-    figure = soup.new_tag("figure")
+    figure = soup.new_tag("figure", attrs={FEATURE_MARK: ""})
     figure.append(soup.new_tag("img", src=post.feature_image, alt=post.feature_image_alt or ""))
     if post.feature_image_caption:
         caption = soup.new_tag("figcaption")
@@ -199,7 +240,7 @@ def build(
             ))
 
     # ---- Chapters ----
-    for post in posts:
+    for chapter_number, post in enumerate(posts, start=1):
         chapter_slug = sanitize_filename(post.slug)
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
@@ -257,10 +298,16 @@ def build(
             img.attrs.pop("srcset", None)
             img.attrs.pop("sizes", None)
 
+        feature = soup.find("figure", attrs={FEATURE_MARK: True})
+        feature_html = ""
+        if feature is not None:  # absent if the feature image failed to download
+            del feature[FEATURE_MARK]
+            feature_html = str(feature.extract())
         body_content = soup.body.decode_contents() if soup.body else str(soup)
         pages.append(_add_page(
             book, css, display_title, f"{chapter_slug}.xhtml",
-            f"<h1>{post.title}</h1>\n{body_content}",
+            f'<article id="article-{chapter_number}">\n'
+            f"{_article_header(post, feature_html)}\n{body_content}\n</article>",
             spec.lang,
         ))
 

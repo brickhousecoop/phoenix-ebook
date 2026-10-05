@@ -7,12 +7,18 @@ from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 
 
 @dataclass
+class Author:
+    name: str
+    url: str | None = None  # profile page, linked from the byline
+
+
+@dataclass
 class Post:
     slug: str
     title: str
     html: str
-    authors: list[str] = field(default_factory=list)
-    published_at: str | None = None
+    authors: list[Author] = field(default_factory=list)
+    published_at: str | None = None  # ISO 8601, in the site's own timezone when known
     feature_image: str | None = None  # lead image URL, shown above the post body
     feature_image_alt: str | None = None
     feature_image_caption: str | None = None  # HTML

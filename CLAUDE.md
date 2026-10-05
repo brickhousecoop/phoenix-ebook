@@ -12,7 +12,7 @@ The code is already split for that trajectory — keep the seams.
 ```
 build_epub.py                   # thin CLI shim
 phoenix_ebook/
-├── models.py                   # Post, BookSpec, SourceSpec, BuildResult/BuildProblem
+├── models.py                   # Post, Author, BookSpec, SourceSpec, BuildResult/BuildProblem
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
 ├── platforms/
 │   ├── base.py                 # Platform ABC + registry
