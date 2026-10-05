@@ -22,6 +22,8 @@ phoenix_ebook/
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
 └── epub_builder.py             # EPUB assembly
+tests/                          # offline pytest suite (fixtures in conftest.py)
+scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
 ```
 
 Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself. Adding site quirks = new processor module. Don't collapse these layers back into `build_epub.py`.
@@ -38,7 +40,7 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 
 ## Conventions
 
-- No tests yet; don't add a test framework without being asked.
+- Run the test suite before committing (`.venv/bin/python -m pytest`); changes that add or change behavior come with tests. Tests are offline: use the `FakeSession` / `build_book` fixtures in `tests/conftest.py`, never the network.
 - Keep CLI flags back-compatible — the user has existing invocations.
 - When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import.
 

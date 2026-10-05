@@ -146,7 +146,7 @@ def _cmd_set_secret(args, *, prefer_keyring: bool) -> None:
     print(f"Stored secret for platform={args.platform} domain={domain} in {where}")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build an EPUB from posts fetched from a platform.")
     parser.add_argument("--url", default="https://flaminghydra.ghost.io", help="Site URL")
     parser.add_argument("--platform", default="ghost", help="Source platform (default: ghost)")
@@ -187,7 +187,12 @@ def main() -> None:
 
     parser.add_argument("--output", default="book.epub", help="Output EPUB path")
     parser.add_argument("slugs", nargs="*", help="Post slugs to include")
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.set_secret_file:
         _cmd_set_secret(args, prefer_keyring=False)

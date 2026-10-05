@@ -156,6 +156,16 @@ phoenix_ebook/
 - **New platform:** subclass `Platform` in `phoenix_ebook/platforms/`, decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`.
 - **New site processor:** subclass `HtmlProcessor` in `phoenix_ebook/processors/`, decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. See `flaminghydra.py` for an example.
 
+## Development
+
+```bash
+uv pip install --python .venv/bin/python -r requirements-dev.txt   # adds pytest
+.venv/bin/python scripts/fetch_epubcheck.py                         # optional: pinned epubcheck into .tools/
+.venv/bin/python -m pytest
+```
+
+The suite runs offline (no network, no API key). The epubcheck tests need Java and the downloaded validator; without them they are skipped, not failed.
+
 ## License
 
 [MIT](LICENSE)
