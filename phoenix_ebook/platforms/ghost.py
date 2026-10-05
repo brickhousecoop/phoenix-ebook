@@ -8,8 +8,8 @@ import time
 
 import requests
 
-from phoenix.models import Post
-from phoenix.platforms.base import Platform, register_platform
+from phoenix_ebook.models import Post
+from phoenix_ebook.platforms.base import Platform, register_platform
 
 
 def _b64url(data: bytes) -> str:

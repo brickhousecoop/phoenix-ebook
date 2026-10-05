@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from phoenix.models import Post
-from phoenix.processors.base import HtmlProcessor, register_processor
+from phoenix_ebook.models import Post
+from phoenix_ebook.processors.base import HtmlProcessor, register_processor
 
 
 @register_processor

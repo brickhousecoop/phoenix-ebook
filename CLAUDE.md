@@ -1,7 +1,7 @@
-# Phoenix
+# phoenix-ebook
 
-Ghost→EPUB builder. Currently targets `flaminghydra.ghost.io`. Trajectory:
-1. Add more source platforms (Substack is named next).
+Ghost→EPUB builder. Name it "phoenix-ebook" in prose — it is one module of a larger Phoenix project, not "Phoenix" itself. Currently targets `flaminghydra.ghost.io`. Trajectory:
+1. Add more source platforms.
 2. Add more site-specific HTML quirks via per-site processors.
 3. Eventually: web UI that drives the library (not just a CLI).
 
@@ -11,7 +11,7 @@ The code is already split for that trajectory — keep the seams.
 
 ```
 build_epub.py                   # thin CLI shim
-phoenix/
+phoenix_ebook/
 ├── models.py                   # Post, BookSpec, SourceSpec dataclasses
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
 ├── platforms/
@@ -23,41 +23,17 @@ phoenix/
 └── epub_builder.py             # EPUB assembly, image pipeline
 ```
 
-Adding a new source platform = new module in `phoenix/platforms/` that registers itself. Adding site quirks = new processor module. Don't collapse these layers back into `build_epub.py`.
+Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself. Adding site quirks = new processor module. Don't collapse these layers back into `build_epub.py`.
 
-## Secrets
+## Setup, usage, secrets
 
-`phoenix/secrets.py` `SecretStore` lookup order:
-1. Constructor `override` (CLI `--admin-key`)
-2. Env `PHOENIX_SECRET_<PLATFORM>_<DOMAIN>` (e.g. `PHOENIX_SECRET_GHOST_FLAMINGHYDRA_GHOST_IO`)
-3. JSON `~/.phoenix_secrets.json` with schema `{platform: {domain: secret}}`
-4. OS keyring, service `phoenix:<platform>`, username `<domain>`
+See `README.md` — it's the source of truth for setup, CLI/manifest usage, and the secret lookup order. Keep it current when flags or behavior change. Agent-specific notes:
 
-Legacy `~/.ghost_epub_secrets.json` auto-migrates into the namespaced file under `"ghost"` on first access; the old file is renamed `.migrated`. If old secrets appear "lost," check for the `.migrated` backup.
-
-## Setup on a fresh machine
-
-Use a project-local venv in `.venv/` (gitignored). Prefer `uv` — on Debian/Ubuntu with system Python 3.12+, `pip install` is blocked (PEP 668) and `python3 -m venv` fails without the `python3.X-venv` package.
-```
-uv venv .venv
-uv pip install --python .venv/bin/python -r requirements.txt
-# then store the Ghost admin key once:
-.venv/bin/python build_epub.py --set-secret --platform ghost --url https://flaminghydra.ghost.io
-```
-Without `uv`: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
-
-In a container/sandbox with no OS keyring, use `--set-secret-file` instead of `--set-secret` (writes `~/.phoenix_secrets.json`).
-
-## Running
-
-CLI (back-compatible with pre-refactor flags, plus `--platform`, `--processor`, `--manifest`):
-```
-.venv/bin/python build_epub.py --url https://flaminghydra.ghost.io \
-  --title "My Book" --cover cover.jpg --output book.epub \
-  slug-one slug-two slug-three
-```
-
-Or via TOML manifest (`--manifest book.toml`), which is also the shape the future web UI will produce.
+- Run everything via `.venv/bin/python`. Create the venv with `uv` — on Debian/Ubuntu system Python, `pip install` is blocked (PEP 668) and `python3 -m venv` may lack `ensurepip`.
+- In a container/sandbox there's usually no OS keyring: the user stores the key with `--set-secret-file` from their own shell. Never ask for the key in chat or read `~/.phoenix_secrets.json` contents.
+- Secret naming (`~/.phoenix_secrets.json`, `PHOENIX_SECRET_*`, keyring service `phoenix:<platform>`) is deliberately **shared across all Phoenix modules** — don't rename it to `phoenix_ebook`. Only the Python package is `phoenix_ebook`.
+- Legacy `~/.ghost_epub_secrets.json` auto-migrates into `~/.phoenix_secrets.json` under `"ghost"` on first access; the old file is renamed `.migrated`. If old secrets appear "lost," check for the `.migrated` backup.
+- The TOML manifest is also the shape the future web UI will produce — keep it and `BookSpec` in sync.
 
 ## Conventions
 

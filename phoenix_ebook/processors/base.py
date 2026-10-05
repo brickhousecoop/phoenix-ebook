@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup
 
-from phoenix.models import Post
+from phoenix_ebook.models import Post
 
 
 class HtmlProcessor:

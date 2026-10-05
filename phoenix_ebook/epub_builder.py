@@ -14,8 +14,8 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 from PIL import Image
 
-from phoenix.models import BookSpec, Post
-from phoenix.processors.base import HtmlProcessor
+from phoenix_ebook.models import BookSpec, Post
+from phoenix_ebook.processors.base import HtmlProcessor
 
 
 CSS = """

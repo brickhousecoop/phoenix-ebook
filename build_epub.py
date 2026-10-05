@@ -14,12 +14,12 @@ except ImportError:
 
 import requests
 
-from phoenix import platforms, processors  # noqa: F401 — ensures registrations run
-from phoenix.epub_builder import build
-from phoenix.models import BookSpec, SourceSpec
-from phoenix.platforms.base import get_platform
-from phoenix.processors.base import get_processor
-from phoenix.secrets import SecretStore, extract_domain
+from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
+from phoenix_ebook.epub_builder import build
+from phoenix_ebook.models import BookSpec, SourceSpec
+from phoenix_ebook.platforms.base import get_platform
+from phoenix_ebook.processors.base import get_processor
+from phoenix_ebook.secrets import SecretStore, extract_domain
 
 
 def _default_processor_for(url: str) -> str:

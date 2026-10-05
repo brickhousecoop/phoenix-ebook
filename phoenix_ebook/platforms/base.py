@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 import requests
 
-from phoenix.models import Post
+from phoenix_ebook.models import Post
 
 
 class Platform(ABC):
