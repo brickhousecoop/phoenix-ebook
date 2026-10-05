@@ -21,6 +21,9 @@ phoenix_ebook/
 │   ├── base.py                 # HtmlProcessor (shared cleanup in clean()) + GenericProcessor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
+├── styles/
+│   ├── core.css                # Standard Ebooks snapshot (CC0) — never edit; see its header
+│   └── phoenix.css             # our styles for our markup; all overrides go here
 └── epub_builder.py             # EPUB assembly
 tests/                          # offline pytest suite (fixtures in conftest.py)
 scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
@@ -42,6 +45,7 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 
 - Run the test suite before committing (`.venv/bin/python -m pytest`); changes that add or change behavior come with tests. Tests are offline: use the `FakeSession` / `build_book` fixtures in `tests/conftest.py`, never the network.
 - Keep CLI flags back-compatible — the user has existing invocations.
+- `phoenix_ebook/styles/core.css` is a pinned, unmodified Standard Ebooks snapshot (a checksum test enforces it). Put style changes in `phoenix.css`; never set `font-family` (readers' fonts win). Style changes need a visual check: render pages (e.g. headless Chromium) and give the user a sample book to review.
 - When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import. Processor `clean()` overrides must call `super().clean()`.
 - Document contracts, not mechanics: public API and extension points get docstrings; trivial helpers don't. Changes that alter how books come out get a CHANGELOG.md entry.
 

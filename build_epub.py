@@ -55,6 +55,7 @@ def _spec_from_args(args) -> BookSpec:
         acknowledgements_file=args.acknowledgements_file,
         about_file=args.about_file,
         placeholders=not args.no_placeholders,
+        css=args.css,
         optimize_images=not args.keep_original_images,
         image_max_width=args.image_max_width,
         image_quality=args.image_quality,
@@ -72,6 +73,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
     source_data = data.get("source", {})
     content = data.get("content", {})
     images = data.get("images", {})
+    style = data.get("style", {})
     slugs = data.get("posts") or source_data.get("slugs") or []
 
     source = SourceSpec(
@@ -97,6 +99,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
         acknowledgements_file=content.get("acknowledgements_file"),
         about_file=content.get("about_file"),
         placeholders=content.get("placeholders", True),
+        css=style.get("css"),
         optimize_images=images.get("optimize", True),
         image_max_width=images.get("max_width", DEFAULT_MAX_WIDTH),
         image_quality=images.get("quality", DEFAULT_QUALITY),
@@ -183,6 +186,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--about-file", help="Path to About This Book HTML/text file")
     parser.add_argument("--no-placeholders", action="store_true",
                         help="Leave out front/back-matter sections that have no file, instead of a placeholder page")
+
+    # styling
+    parser.add_argument("--css", help="Extra CSS file, applied after the built-in styles (its rules win)")
 
     # images
     parser.add_argument("--image-max-width", type=int, default=DEFAULT_MAX_WIDTH,

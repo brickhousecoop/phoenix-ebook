@@ -150,6 +150,18 @@ The cover image is handled separately and isn't affected by these options.
 
 If an image can't be downloaded (network error, HTTP error, or a response that isn't actually an image), it is left out of the book and the build still succeeds; each one is listed as a warning after the build. Temporary failures (timeouts, connection errors, HTTP 5xx/429) are retried once.
 
+### Styling
+
+Books use [Standard Ebooks](https://standardebooks.org)' `core.css` (a public-domain stylesheet tuned for reading apps) plus phoenix-ebook's own styles for its pages: a centered title page, chapter headers with the date and byline in small caps, figures kept on one screen together with their captions, and book-style indented paragraphs. No font is set, so the reader's own font and size settings always apply.
+
+To adjust the look of a book, add your own stylesheet; its rules are applied last, so they win:
+
+```bash
+.venv/bin/python build_epub.py --css my-styles.css …
+```
+
+In a manifest: `css = "my-styles.css"` under a `[style]` table.
+
 ## Extending phoenix-ebook
 
 ```

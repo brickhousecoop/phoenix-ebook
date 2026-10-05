@@ -37,6 +37,7 @@ SPEC_FLAGS = [
     ("--acknowledgements-file", "a.html", lambda s: s.acknowledgements_file == "a.html"),
     ("--about-file", "ab.html", lambda s: s.about_file == "ab.html"),
     ("--no-placeholders", None, lambda s: s.placeholders is False),
+    ("--css", "extra.css", lambda s: s.css == "extra.css"),
     ("--image-max-width", "600", lambda s: s.image_max_width == 600),
     ("--image-quality", "70", lambda s: s.image_quality == 70),
     ("--keep-original-images", None, lambda s: s.optimize_images is False),
@@ -161,6 +162,9 @@ acknowledgements_file = "a.html"
 about_file = "ab.html"
 placeholders = false
 
+[style]
+css = "extra.css"
+
 [images]
 optimize = false
 max_width = 700
@@ -180,6 +184,7 @@ def test_full_manifest(tmp_path):
         ("c.jpg", "c.html", "i.html", "f.html", "in.txt", "n.html", "a.html", "ab.html")
     assert (s.optimize_images, s.image_max_width, s.image_quality) == (False, 700, 60)
     assert s.placeholders is False
+    assert s.css == "extra.css"
 
 
 def test_slugs_under_source_also_accepted(tmp_path):

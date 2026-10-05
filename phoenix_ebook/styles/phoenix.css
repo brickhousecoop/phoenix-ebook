@@ -1,0 +1,113 @@
+@charset "utf-8";
+@namespace epub "http://www.idpf.org/2007/ops";
+
+/*
+  phoenix-ebook's styles for its own markup. Loaded after core.css (Standard
+  Ebooks) and before any user CSS (--css). No font-family anywhere: the
+  reader's font and size always win.
+*/
+
+/* core.css renders <b>/<strong> as small caps (a Standard Ebooks markup
+   convention). In posts they mean bold, so restore that. */
+b,
+strong{
+	font-variant: normal;
+	font-weight: bold;
+}
+
+/* ---- Title page and half-title page ---- */
+
+section[epub|type~="titlepage"],
+section[epub|type~="halftitlepage"]{
+	margin-top: 20%;
+	margin-top: 20vh;
+	text-align: center;
+}
+
+section[epub|type~="titlepage"] h1{
+	margin: 0 0 2em;
+}
+
+section[epub|type~="titlepage"] p,
+section[epub|type~="halftitlepage"] p{
+	margin: .5em 0;
+	text-indent: 0;
+}
+
+section[epub|type~="titlepage"] p.publisher{
+	margin-top: 3em;
+}
+
+section[epub|type~="halftitlepage"] p.title{
+	font-size: 1.5em;
+	font-variant: small-caps;
+}
+
+/* ---- Chapter header: date, title, byline, feature image ---- */
+
+article > header p.date,
+article > header p.byline{
+	font-variant: small-caps;
+	margin: 0;
+	text-indent: 0;
+}
+
+article > header h2{
+	margin: 1em 0;
+}
+
+article > header p.byline{
+	margin-bottom: 1.5em;
+}
+
+/* ---- Figures ---- */
+
+figure{
+	break-inside: avoid;
+	page-break-inside: avoid;
+	margin: 1em 2.5em;
+	text-align: center;
+}
+
+img{
+	height: auto;
+	max-width: 100%;
+}
+
+/* Tall images must fit on one screen rather than being cropped or split. */
+figure img{
+	display: block;
+	margin: 0 auto;
+	max-height: 95%;
+	max-height: 95vh;
+}
+
+figcaption{
+	font-size: smaller;
+	hyphens: none;
+	margin-top: 1em;
+	text-indent: 0;
+}
+
+figcaption p{
+	text-indent: 0;
+}
+
+/* Book-style paragraphs: core.css indents paragraphs and handles most "first
+   after a break" cases; also start flush after a figure. */
+figure + p{
+	text-indent: 0;
+}
+
+/* ---- Contents page ---- */
+
+/* Entries aren't numbered items (the foreword isn't "1."). */
+nav[epub|type~="toc"] ol{
+	list-style-type: none;
+	margin: 0;
+	padding: 0;
+}
+
+nav[epub|type~="toc"] li{
+	margin: .5em 0;
+}

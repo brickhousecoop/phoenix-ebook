@@ -22,11 +22,10 @@ from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Po
 from phoenix_ebook.processors.base import HtmlProcessor
 
 
-CSS = """
-body { font-family: Georgia, serif; line-height: 1.6; margin: 1em; }
-img { max-width: 100%; height: auto; display: block; margin: 1em 0; }
-h1, h2, h3 { font-family: sans-serif; }
-"""
+# Linked from every page in this order; later files win. core.css is a pinned,
+# unmodified Standard Ebooks snapshot (see its header); overrides go in phoenix.css.
+STYLES_DIR = Path(__file__).parent / "styles"
+STYLESHEETS = ("core.css", "phoenix.css")
 
 
 def media_type_for_ext(ext: str) -> str:
@@ -51,12 +50,13 @@ def wrap_text_as_html(title: str, text: str) -> str:
     return f"<h2>{title}</h2>\n{paragraphs}"
 
 
-def _add_page(book, css, title, file_name, content, lang):
+def _add_page(book, styles, title, file_name, content, lang):
     if not content or not content.strip():
         content = f"<p>({title} — content placeholder)</p>"
     page = epub.EpubHtml(title=title, file_name=file_name, lang=lang)
     page.content = content
-    page.add_item(css)
+    for style in styles:
+        page.add_item(style)
     book.add_item(page)
     return page
 
@@ -98,6 +98,7 @@ CONTENT_FILE_OPTIONS = {
     "notes_file": "--notes-file / [content] notes_file",
     "acknowledgements_file": "--acknowledgements-file / [content] acknowledgements_file",
     "about_file": "--about-file / [content] about_file",
+    "css": "--css / [style] css",
 }
 
 
@@ -229,8 +230,16 @@ def build(
         book.add_metadata("DC", "date", spec.pub_date)
     book.add_metadata("DC", "rights", "© All rights reserved.")
 
-    css = epub.EpubItem(uid="style", file_name="style/style.css", media_type="text/css", content=CSS)
-    book.add_item(css)
+    styles = [
+        epub.EpubItem(uid=f"style-{Path(name).stem}", file_name=f"style/{name}", media_type="text/css",
+                      content=(STYLES_DIR / name).read_bytes())
+        for name in STYLESHEETS
+    ]
+    if spec.css:
+        styles.append(epub.EpubItem(uid="style-user", file_name="style/user.css", media_type="text/css",
+                                    content=Path(spec.css).read_bytes()))
+    for style in styles:
+        book.add_item(style)
 
     front: list[epub.EpubHtml] = []      # reading order before the contents page
     after_toc: list[epub.EpubHtml] = []  # foreword, intro: after the contents page
@@ -270,7 +279,7 @@ def build(
         book.add_metadata(None, "meta", "", {"name": "cover", "content": "cover-image"})
 
     # ---- Front matter ----
-    title_page = _add_page(book, css, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang)
+    title_page = _add_page(book, styles, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang)
     for file_attr, page_title, file_name, placeholder, bucket in [
         (spec.copyright_file, "Copyright", "copyright.xhtml",
          "[Copyright placeholder — replace with publication copyright notice.]", front),
@@ -281,13 +290,13 @@ def build(
     ]:
         content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
         if content is not None:
-            bucket.append(_add_page(book, css, page_title, file_name, content, spec.lang))
+            bucket.append(_add_page(book, styles, page_title, file_name, content, spec.lang))
 
     if spec.intro_file:
         intro_text = Path(spec.intro_file).read_text(encoding="utf-8").strip()
         if intro_text:
             after_toc.append(_add_page(
-                book, css, "Introduction", "intro.xhtml",
+                book, styles, "Introduction", "intro.xhtml",
                 wrap_text_as_html("Introduction", intro_text),
                 spec.lang,
             ))
@@ -358,7 +367,7 @@ def build(
             feature_html = str(feature.extract())
         body_content = soup.body.decode_contents() if soup.body else str(soup)
         chapters.append(_add_page(
-            book, css, post.title, f"{chapter_slug}.xhtml",
+            book, styles, post.title, f"{chapter_slug}.xhtml",
             f'<article id="article-{chapter_number}">\n'
             f"{_article_header(post, feature_html)}\n{body_content}\n</article>",
             spec.lang,
@@ -375,12 +384,12 @@ def build(
     ]:
         content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
         if content is not None:
-            back.append(_add_page(book, css, page_title, file_name, content, spec.lang))
+            back.append(_add_page(book, styles, page_title, file_name, content, spec.lang))
 
     # ---- Half-title page: divides real front matter from the chapters ----
     half_title = []
     if front or after_toc:
-        half_title = [_add_page(book, css, spec.title, "halftitlepage.xhtml", _half_title_page(spec), spec.lang)]
+        half_title = [_add_page(book, styles, spec.title, "halftitlepage.xhtml", _half_title_page(spec), spec.lang)]
 
     # ---- Navigation and reading order ----
     # Reading order: title page, copyright, imprint, contents, foreword, intro,
@@ -390,7 +399,10 @@ def build(
     chapter_links = [epub.Link(page.file_name, contents_labels[page.file_name], page.id) for page in chapters]
     book.toc = tuple(after_toc + chapter_links + back)
     book.add_item(epub.EpubNcx())
-    book.add_item(epub.EpubNav())
+    nav = epub.EpubNav(title="Contents")
+    for style in styles:
+        nav.add_item(style)
+    book.add_item(nav)
     book.spine = [title_page, *front, "nav", *after_toc, *half_title, *chapters, *back]
 
     book.guide.append({"type": "title-page", "title": "Title Page", "href": title_page.file_name})

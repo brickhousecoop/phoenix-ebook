@@ -5,6 +5,7 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 ## Unreleased
 
 ### Changed
+- **New look** (#7): books now use Standard Ebooks' `core.css` plus phoenix-ebook's own stylesheet: centered title page, small-caps dates and bylines, book-style paragraphs, figures kept on one screen with their captions, and a "Contents" page without numbering. The previous stylesheet forced the Georgia font; now no font is set, so readers' own font settings apply. Tall images are capped to the screen height instead of overflowing.
 - **Book structure** (#6): a generated **title page** now opens the book, followed by copyright, imprint, the **contents page** (moved here from page 2), foreword and introduction; a **half-title page** divides front matter from the chapters. The contents page starts at the foreword: it no longer lists the title page, copyright, imprint, the half-title page or itself.
 - **No cover page** (#6): the cover is declared as the book's cover image only, as Kindle's guidelines recommend; reading apps show it in the library. The book opens on the title page.
 - **Chapter titles are `<h2>`** (#6), under the title page's `<h1>`; generated placeholder headings are `<h2>` too. If your content files start with `<h1>`, change them to `<h2>`.
@@ -21,6 +22,7 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 - **Titles containing `&` or `<`** no longer produce an invalid EPUB.
 
 ### Added
+- `--css` (manifest: `[style] css`): add your own stylesheet, applied after the built-in ones.
 - `--no-placeholders` (manifest: `[content] placeholders = false`): leave out sections that have no file instead of adding placeholder pages.
 - EPUB landmarks for the title page, contents page and start of the text, which some reading apps use to decide where a book opens.
 - `--image-max-width`, `--image-quality`, `--keep-original-images` and the manifest `[images]` table.

@@ -32,3 +32,10 @@ def test_book_where_every_image_failed_is_valid(build_book):
 def test_no_placeholders_book_without_cover_is_valid(build_book):
     book = build_book([post(slug="one", title="One"), post(slug="two", title="Two")], placeholders=False)
     assert_valid_epub(book.path)
+
+
+def test_book_with_user_css_is_valid(build_book, tmp_path):
+    extra = tmp_path / "extra.css"
+    extra.write_text("p { color: #333; }\nfigcaption { font-style: italic; }\n")
+    book = build_book([post(slug="one", title="One")], css=str(extra))
+    assert_valid_epub(book.path)

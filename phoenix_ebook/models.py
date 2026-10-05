@@ -66,6 +66,7 @@ class BookSpec:
     acknowledgements_file: str | None = None
     about_file: str | None = None
     placeholders: bool = True  # placeholder pages for front/back-matter sections without a file
+    css: str | None = None  # user stylesheet, linked after the built-in ones
 
     optimize_images: bool = True
     image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing
