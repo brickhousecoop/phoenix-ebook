@@ -138,6 +138,8 @@ By default, post images are scaled down to at most 1100px wide and re-encoded as
 
 The cover image is handled separately and isn't affected by these options.
 
+If an image can't be downloaded (network error, HTTP error, or a response that isn't actually an image), it is left out of the book and the build still succeeds; each one is listed as a warning after the build. Temporary failures (timeouts, connection errors, HTTP 5xx/429) are retried once.
+
 ## Extending phoenix-ebook
 
 ```

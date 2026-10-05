@@ -116,8 +116,21 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
         for slug in spec.source.slugs
     ]
 
-    out = build(spec, posts, processor, session=session, image_base_url=spec.source.url)
-    print(f"wrote {out}")
+    result = build(spec, posts, processor, session=session, image_base_url=spec.source.url)
+    print(f"wrote {result.path}")
+    _report_problems(result.problems)
+
+
+def _report_problems(problems) -> None:
+    if not problems:
+        return
+    for p in problems:
+        print(f"warning: [{p.post_slug}] {p.url}: {p.detail}", file=sys.stderr)
+    failed = sum(p.kind == "image-download-failed" for p in problems)
+    if failed:
+        noun, verb = ("image", "was") if failed == 1 else ("images", "were")
+        print(f"{failed} {noun} could not be downloaded and {verb} left out; see warnings above",
+              file=sys.stderr)
 
 
 def _cmd_set_secret(args, *, prefer_keyring: bool) -> None:

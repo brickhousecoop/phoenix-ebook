@@ -49,3 +49,19 @@ class BookSpec:
 
     output: str = "book.epub"
     source: SourceSpec | None = None
+
+
+@dataclass
+class BuildProblem:
+    """Something that went wrong during a build without stopping it."""
+
+    kind: str  # e.g. "image-download-failed"
+    post_slug: str | None
+    url: str | None
+    detail: str
+
+
+@dataclass
+class BuildResult:
+    path: str
+    problems: list[BuildProblem] = field(default_factory=list)

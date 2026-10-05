@@ -1,12 +1,79 @@
 from __future__ import annotations
 
 import io
+import time
+import xml.etree.ElementTree as ET
 
+import requests
 from PIL import Image, ImageOps
 
 
 DEFAULT_MAX_WIDTH = 1100
 DEFAULT_QUALITY = 85
+
+FETCH_TIMEOUT = 15
+RETRY_DELAY = 1.0
+
+
+class ImageFetchError(Exception):
+    """An image URL didn't yield a usable image. The message is the reason."""
+
+
+def _is_svg(data: bytes) -> bool:
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return False
+    return root.tag == "svg" or root.tag.endswith("}svg")
+
+
+def validate_image(data: bytes, ext: str) -> str:
+    """Return the extension to store the image under, or raise ImageFetchError.
+
+    Judged by the bytes, not the server's Content-Type: rasters must decode
+    with Pillow, SVGs must be XML with an <svg> root.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+        return ext
+    except Exception:
+        pass
+    if _is_svg(data):
+        return ".svg"
+    raise ImageFetchError("response is not a valid image")
+
+
+def fetch_image(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: float = FETCH_TIMEOUT,
+    retry_delay: float = RETRY_DELAY,
+) -> tuple[bytes, str]:
+    """Download an image, retrying once on transient failures.
+
+    Returns (body, Content-Type). Transient: connection errors, timeouts,
+    HTTP 5xx and 429; other HTTP errors fail immediately. Raises
+    ImageFetchError with a short reason.
+    """
+    for attempt in (1, 2):
+        try:
+            resp = session.get(url, timeout=timeout)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            transient = True
+        except requests.RequestException as exc:
+            raise ImageFetchError(f"{type(exc).__name__}: {exc}") from exc
+        else:
+            if 200 <= resp.status_code < 300:
+                content_type = resp.headers.get("Content-Type", "unknown")
+                return resp.content, content_type
+            reason = f"HTTP {resp.status_code}"
+            transient = resp.status_code >= 500 or resp.status_code == 429
+        if not transient or attempt == 2:
+            raise ImageFetchError(reason)
+        time.sleep(retry_delay)
 
 
 def _has_transparency(img: Image.Image) -> bool:

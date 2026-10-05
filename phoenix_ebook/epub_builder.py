@@ -14,8 +14,8 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 from PIL import Image
 
-from phoenix_ebook.images import optimize_image
-from phoenix_ebook.models import BookSpec, Post
+from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
+from phoenix_ebook.models import BookSpec, BuildProblem, BuildResult, Post
 from phoenix_ebook.processors.base import HtmlProcessor
 
 
@@ -66,6 +66,17 @@ def _load_or_placeholder(path, title, placeholder_text):
     return f"<h1>{title}</h1>\n<p>{placeholder_text}</p>"
 
 
+def _remove_image(img) -> None:
+    """Remove an <img>, plus any <a> or <figure> wrapper it leaves empty."""
+    link = img.find_parent("a")
+    figure = img.find_parent("figure")
+    img.decompose()
+    if link is not None and not link.get_text(strip=True) and link.find(True) is None:
+        link.decompose()
+    if figure is not None and figure.find("img") is None:
+        figure.decompose()
+
+
 def build(
     spec: BookSpec,
     posts: Iterable[Post],
@@ -73,8 +84,12 @@ def build(
     *,
     session: requests.Session | None = None,
     image_base_url: str = "",
-) -> str:
-    """Assemble an EPUB from already-fetched posts. Returns output path."""
+) -> BuildResult:
+    """Assemble an EPUB from already-fetched posts.
+
+    Images that can't be fetched as valid images are left out of the book and
+    reported in BuildResult.problems; they never fail the build.
+    """
     session = session or requests.Session()
 
     book = epub.EpubBook()
@@ -98,6 +113,8 @@ def build(
     pages = []
     image_items: dict[str, epub.EpubItem] = {}
     image_sizes: dict[str, tuple[int, int] | None] = {}
+    failed_images: dict[str, str] = {}  # src -> reason
+    problems: list[BuildProblem] = []
 
     # ---- Cover ----
     if spec.cover:
@@ -179,9 +196,13 @@ def build(
 
             uid = hashlib.sha1(src.encode()).hexdigest()[:12]
 
-            if src not in image_items:
+            if src not in image_items and src not in failed_images:
                 try:
-                    data = session.get(src, timeout=15).content
+                    data, content_type = fetch_image(session, src)
+                    try:
+                        ext = validate_image(data, ext)
+                    except ImageFetchError as exc:
+                        raise ImageFetchError(f"{exc} (Content-Type: {content_type})") from None
                     size = None
                     if spec.optimize_images:
                         data, ext, size = optimize_image(
@@ -197,8 +218,16 @@ def build(
                     book.add_item(item)
                     image_items[src] = item
                     image_sizes[src] = size
-                except Exception:
-                    continue
+                except ImageFetchError as exc:
+                    failed_images[src] = str(exc)
+
+            if src in failed_images:
+                problems.append(BuildProblem(
+                    kind="image-download-failed", post_slug=post.slug, url=src,
+                    detail=failed_images[src],
+                ))
+                _remove_image(img)
+                continue
 
             img["src"] = image_items[src].file_name
             if image_sizes.get(src) and img.has_attr("width") and img.has_attr("height"):
@@ -238,4 +267,4 @@ def build(
         book.spine = ["nav"] + pages
 
     epub.write_epub(spec.output, book)
-    return spec.output
+    return BuildResult(path=spec.output, problems=problems)

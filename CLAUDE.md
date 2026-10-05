@@ -12,7 +12,7 @@ The code is already split for that trajectory — keep the seams.
 ```
 build_epub.py                   # thin CLI shim
 phoenix_ebook/
-├── models.py                   # Post, BookSpec, SourceSpec dataclasses
+├── models.py                   # Post, BookSpec, SourceSpec, BuildResult/BuildProblem
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
 ├── platforms/
 │   ├── base.py                 # Platform ABC + registry
@@ -20,7 +20,7 @@ phoenix_ebook/
 ├── processors/
 │   ├── base.py                 # HtmlProcessor ABC + GenericProcessor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
-├── images.py                   # optimize_image(): resize + re-encode post images
+├── images.py                   # fetch_image() / validate_image() / optimize_image()
 └── epub_builder.py             # EPUB assembly
 ```
 
