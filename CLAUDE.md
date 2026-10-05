@@ -41,3 +41,17 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 - No tests yet; don't add a test framework without being asked.
 - Keep CLI flags back-compatible — the user has existing invocations.
 - When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `buffystruggles/phoenix-ebook`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily). See `docs/agents/domain.md`.
