@@ -103,6 +103,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
         issn=book.get("issn"),
         rights=book.get("rights"),
         sort_names=dict(data.get("sort_names", {})),
+        alt_text=dict(data.get("alt_text", {})),
         publisher=book.get("publisher"),
         description=book.get("description"),
         pub_date=book.get("pub_date"),
@@ -150,12 +151,37 @@ def _report_problems(problems) -> None:
     if not problems:
         return
     for p in problems:
-        print(f"warning: [{p.post_slug}] {p.url}: {p.detail}", file=sys.stderr)
-    failed = sum(p.kind == "image-download-failed" for p in problems)
-    if failed:
-        noun, verb = ("image", "was") if failed == 1 else ("images", "were")
-        print(f"{failed} {noun} could not be downloaded and {verb} left out; see warnings above",
+        where = f"[{p.post_slug}] {p.location}: " if p.location else (f"[{p.post_slug}] " if p.post_slug else "")
+        caption = f' (caption: "{p.caption}")' if p.caption else ""
+        print(f"warning: {where}{p.url}: {p.detail}{caption}", file=sys.stderr)
+
+    def count(kind):
+        return sum(p.kind == kind for p in problems)
+
+    def plural(n, one, many):
+        return one if n == 1 else many
+
+    if n := count("image-download-failed"):
+        print(f"{n} {plural(n, 'image', 'images')} could not be downloaded and "
+              f"{plural(n, 'was', 'were')} left out; see warnings above", file=sys.stderr)
+    if n := count("image-missing-alt"):
+        print(f"{n} {plural(n, 'image has', 'images have')} no alt text", file=sys.stderr)
+    if n := count("image-suspicious-alt"):
+        print(f"{n} {plural(n, 'image has', 'images have')} alt text that looks unhelpful", file=sys.stderr)
+    if n := count("alt-override-unused"):
+        print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
+
+    to_fix = [p for p in problems if p.kind in ("image-missing-alt", "image-suspicious-alt")]
+    if to_fix:
+        print('\n# Add to your manifest and fill in (leave "" only for purely decorative images):\n# [alt_text]',
               file=sys.stderr)
+        seen = set()
+        for p in to_fix:
+            if p.url in seen:
+                continue
+            seen.add(p.url)
+            caption = f': "{p.caption}"' if p.caption else ""
+            print(f'# "{p.url}" = ""   # {p.post_slug}, {p.location}{caption}', file=sys.stderr)
 
 
 def _cmd_set_secret(args, *, prefer_keyring: bool) -> None:

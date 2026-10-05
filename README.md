@@ -171,6 +171,20 @@ The cover image is handled separately and isn't affected by these options.
 
 If an image can't be downloaded (network error, HTTP error, or a response that isn't actually an image), it is left out of the book and the build still succeeds; each one is listed as a warning after the build. Temporary failures (timeouts, connection errors, HTTP 5xx/429) are retried once.
 
+### Alt text
+
+Alt text is what screen readers say instead of showing an image. After each build, phoenix-ebook lists every image whose alt text is **missing** or **looks unhelpful** (a file name like `IMG_5799.jpg`, a generic word like "image", or a copy of the caption, which would be read twice), with the post, the image's position ("image 3 of 12"), its URL and caption. It then prints a commented-out block ready to paste into your manifest:
+
+```toml
+[alt_text]
+"https://…/content/images/2026/08/IMG_5799.jpg" = "Klee's Angelus Novus: a birdlike angel with wide eyes and spread wings."
+"https://…/content/images/2026/08/divider.png" = ""   # empty = decorative: no alt text, no warning
+```
+
+Entries here win over the alt text from the site, and match the image whatever size variant the post uses. Fixing alt text in Ghost itself is even better: the website benefits too, and the next build picks it up. An entry that matches no image is reported, so typos don't go unnoticed.
+
+Writing good alt text: describe what the image contributes in context, briefly; don't start with "Image of". If the image contains text (a comic's speech bubbles, a screenshot of a post or document), include the text.
+
 ### Styling
 
 Books use [Standard Ebooks](https://standardebooks.org)' `core.css` (a public-domain stylesheet tuned for reading apps) plus phoenix-ebook's own styles for its pages: a centered title page, chapter headers with the date and byline in small caps, figures kept on one screen together with their captions, and book-style indented paragraphs. No font is set, so the reader's own font and size settings always apply.

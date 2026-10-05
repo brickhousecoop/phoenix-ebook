@@ -25,6 +25,7 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 - **Titles containing `&` or `<`** no longer produce an invalid EPUB.
 
 ### Added
+- **Alt text report and overrides** (#10): after each build, images with missing or unhelpful alt text are listed (post, position, URL, caption) with a ready-to-paste manifest block. A manifest `[alt_text]` table supplies or replaces alt text by image URL; an empty value marks an image decorative.
 - `--subtitle`, `--series`, `--series-number`, `--issn`, `--rights` and the manifest's `[sort_names]` table (#5). The ISSN identifies the series and is shown with it on the title page.
 - ISBN and ISSN validation (#5): an invalid number (wrong length or check digit) stops the build before anything is fetched. Subtitle and series appear on the title page.
 - `--css` (manifest: `[style] css`): add your own stylesheet, applied after the built-in ones.

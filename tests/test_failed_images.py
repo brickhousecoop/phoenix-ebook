@@ -13,6 +13,10 @@ from phoenix_ebook.models import BuildResult
 U = "https://img.test/"
 
 
+def download_problems(book) -> list:
+    return [p for p in book.result.problems if p.kind == "image-download-failed"]
+
+
 def remote_img_srcs(html: str) -> list[str]:
     return re.findall(r'<img[^>]+src="(https?://[^"]+)"', html)
 
@@ -93,7 +97,7 @@ def test_html_body_is_rejected_with_content_type(build_book):
 
 def test_flaky_image_is_embedded_after_retry(build_book):
     book = build_book(post(f'<img src="{U}d.png"/>'), {U + "d.png": [FakeResponse(503), ok(png())]})
-    assert 'src="images/' in book.chapter() and not book.result.problems
+    assert 'src="images/' in book.chapter() and not download_problems(book)
 
 
 def test_figure_left_empty_is_removed_with_its_caption(build_book):
@@ -125,7 +129,7 @@ def test_validation_still_applies_with_optimization_disabled(build_book):
     book = build_book(post(f'<img src="{U}f.png"/><img src="{U}g.png"/>'),
                       {U + "f.png": [ok(b"\x89PNG garbage")], U + "g.png": [ok(big)]},
                       optimize_images=False)
-    [problem] = book.result.problems
+    [problem] = download_problems(book)
     assert problem.url == U + "f.png"
     [name] = book.image_names()
     assert book.zip.read(name) == big  # embedded byte-for-byte
@@ -133,4 +137,4 @@ def test_validation_still_applies_with_optimization_disabled(build_book):
 
 def test_svg_without_extension_is_stored_as_svg(build_book):
     book = build_book(post(f'<img src="{U}logo"/>'), {U + "logo": [ok(SVG, "application/octet-stream")]})
-    assert any(n.endswith(".svg") for n in book.image_names()) and not book.result.problems
+    assert any(n.endswith(".svg") for n in book.image_names()) and not download_problems(book)

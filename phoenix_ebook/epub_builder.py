@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 from PIL import Image
 
+from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
 from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
 from phoenix_ebook.processors.base import HtmlProcessor
@@ -307,6 +308,34 @@ def _half_title_page(spec: BookSpec) -> str:
             f'<p class="title">{html.escape(spec.title)}</p>\n{subtitle}</section>')
 
 
+def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: dict[str, str],
+                    used: set[str], problems: list[BuildProblem]) -> None:
+    """Apply alt-text overrides and report missing or suspicious alt text.
+
+    Runs after image handling, so failed images are gone and ``src`` is the
+    embedded path; ``local_to_url`` maps it back to the original URL.
+    """
+    images = soup.find_all("img")
+    for position, img in enumerate(images, start=1):
+        url = local_to_url.get(img.get("src", ""), img.get("src", ""))
+        key = normalize_image_url(url)
+        figure = img.find_parent("figure")
+        caption_tag = figure.find("figcaption") if figure else None
+        caption = caption_tag.get_text(" ", strip=True) if caption_tag else None
+        where = dict(post_slug=post.slug, url=url, location=f"image {position} of {len(images)}", caption=caption)
+
+        if key in overrides:
+            img["alt"] = overrides[key]  # "" marks a decorative image
+            used.add(key)
+            continue
+        alt = img.get("alt")
+        if alt is None or not alt.strip():
+            img["alt"] = ""
+            problems.append(BuildProblem(kind="image-missing-alt", detail="no alt text", **where))
+        elif reason := suspicious_alt(alt, caption):
+            problems.append(BuildProblem(kind="image-suspicious-alt", detail=reason, **where))
+
+
 def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
     """Put the post's feature image at the top of its content, as a <figure>.
 
@@ -367,6 +396,9 @@ def build(
     image_items: dict[str, epub.EpubItem] = {}
     image_sizes: dict[str, tuple[int, int] | None] = {}
     failed_images: dict[str, str] = {}  # src -> reason
+    local_to_url: dict[str, str] = {}  # embedded image path -> original URL
+    alt_overrides = {normalize_image_url(url): alt for url, alt in spec.alt_text.items()}
+    used_overrides: set[str] = set()
     problems: list[BuildProblem] = []
 
     # ---- Cover (metadata only: no cover page, see #6) ----
@@ -473,10 +505,13 @@ def build(
                 continue
 
             img["src"] = image_items[src].file_name
+            local_to_url[img["src"]] = src
             if image_sizes.get(src) and img.has_attr("width") and img.has_attr("height"):
                 img["width"], img["height"] = (str(n) for n in image_sizes[src])
             img.attrs.pop("srcset", None)
             img.attrs.pop("sizes", None)
+
+        _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems)
 
         feature = soup.find("figure", attrs={FEATURE_MARK: True})
         feature_html = ""
@@ -503,6 +538,11 @@ def build(
         content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
         if content is not None:
             back.append(_add_page(book, styles, page_title, file_name, content, spec.lang))
+
+    for url, _ in spec.alt_text.items():
+        if normalize_image_url(url) not in used_overrides:
+            problems.append(BuildProblem(kind="alt-override-unused", post_slug=None, url=url,
+                                         detail="no image in the book has this URL"))
 
     # ---- Half-title page: divides real front matter from the chapters ----
     half_title = []

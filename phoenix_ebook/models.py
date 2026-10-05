@@ -73,6 +73,7 @@ class BookSpec:
     placeholders: bool = True  # placeholder pages for front/back-matter sections without a file
     css: str | None = None  # user stylesheet, linked after the built-in ones
     sort_names: dict[str, str] = field(default_factory=dict)  # name -> "Last, First" overrides
+    alt_text: dict[str, str] = field(default_factory=dict)  # image URL -> alt text ("" = decorative)
 
     optimize_images: bool = True
     image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing
@@ -86,10 +87,12 @@ class BookSpec:
 class BuildProblem:
     """Something that went wrong during a build without stopping it."""
 
-    kind: str  # e.g. "image-download-failed"
+    kind: str  # e.g. "image-download-failed", "image-missing-alt"
     post_slug: str | None
     url: str | None
     detail: str
+    location: str | None = None  # e.g. "image 3 of 12" within the chapter
+    caption: str | None = None
 
 
 @dataclass
