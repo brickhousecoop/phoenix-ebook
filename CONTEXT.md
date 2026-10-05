@@ -24,6 +24,10 @@ _Avoid_: Collection (ambiguous with the book itself), volume
 
 ## Book structure
 
+**Decorative image**:
+An image that conveys no content (a divider, an ornament), marked in the book's alt-text table with an empty description so it gets empty alt text and isn't reported as missing.
+_Avoid_: Spacer, ornament image
+
 **Chapter**:
 A post's page in the book. A book's chapters are its posts, in the order given.
 _Avoid_: Article (that is only the HTML element a chapter is wrapped in), section
