@@ -58,8 +58,8 @@ Pass the site URL, book metadata, and the post slugs in reading order:
 
 ```bash
 .venv/bin/python build_epub.py --url https://flaminghydra.ghost.io \
-  --title "Flaming Hydra Collection" \
-  --author "Flaming Hydra Editors" \
+  --title "Flaming Hydra" --subtitle "August 2026" \
+  --editor "Flaming Hydra Editors" \
   --cover cover.jpg \
   --output flaming-hydra.epub \
   1940-for-some fender-bender vigil-vacancy
@@ -80,9 +80,15 @@ posts = [
   "vigil-vacancy",
 ]
 
+[sort_names]          # optional: fix sort names the automatic rule gets wrong
+"Felipe De La Hoz" = "De La Hoz, Felipe"
+
 [book]
-title = "Flaming Hydra Collection"
-author = "Flaming Hydra Editors"
+title = "Flaming Hydra"
+subtitle = "August 2026"
+editor = "Flaming Hydra Editors"
+series = "Flaming Hydra Digest"
+series_number = 368
 publisher = "Flaming Hydra Press"
 description = "A collection of essays."
 pub_date = "2026-09-29"
@@ -110,13 +116,28 @@ quality = 85
 .venv/bin/python build_epub.py --manifest book.toml
 ```
 
+### Credits and metadata
+
+| Option | Manifest `[book]` | What it does |
+|---|---|---|
+| `--editor` (old name: `--author`) | `editor` (or `author`) | Who compiled the book. Shown on the title page and as the book's creator in reading apps. |
+| `--subtitle` | `subtitle` | Shown under the title on the title page and half-title page. |
+| `--series`, `--series-number` | `series`, `series_number` | E.g. "Flaming Hydra Digest", 368. Shown on the title page; lets apps group the books. |
+| `--rights` | `rights` | Rights statement in the book's metadata. Left out if not given. |
+| `--isbn` | `isbn` | This book's ISBN (one per book and format), stored as a standard `urn:isbn:` identifier. |
+| `--issn` | `issn` | The series' ISSN (one number for all issues; needs `--series`). Shown with the series on the title page. |
+
+ISBNs and ISSNs are checked (including the check digit) before anything is fetched, so a typo stops the build instead of going into the book.
+
+Each post's author is credited in the book's metadata as a **contributor**, so library catalogues can find the book by any of its writers while the shelf shows the editor. Without `--editor`, the post authors are credited as the book's authors instead. Sort names ("Connor, J.D.") are derived automatically; fix any the rule gets wrong in a `[sort_names]` table in the manifest.
+
 ### Book structure
 
 Pages appear in this order:
 
 | Page | Option | If omitted |
 |---|---|---|
-| Title page | — (from `--title`, `--author`, `--publisher`) | always generated |
+| Title page | — (from `--title`, `--subtitle`, `--series`, `--editor`, `--publisher`) | always generated |
 | Copyright | `--copyright-file` | placeholder page |
 | Imprint | `--imprint-file` | placeholder page |
 | Contents | — | always generated |

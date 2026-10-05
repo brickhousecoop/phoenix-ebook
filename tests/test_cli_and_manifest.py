@@ -22,7 +22,13 @@ SPEC_FLAGS = [
     ("--platform", "ghost", lambda s: s.source.platform == "ghost"),
     ("--processor", "generic", lambda s: s.source.processor == "generic"),
     ("--title", "My Book", lambda s: s.title == "My Book"),
-    ("--author", "Ed", lambda s: s.author == "Ed"),
+    ("--editor", "Ed", lambda s: s.editor == "Ed"),
+    ("--author", "Ed", lambda s: s.editor == "Ed"),  # old name for --editor
+    ("--subtitle", "Sub", lambda s: s.subtitle == "Sub"),
+    ("--series", "Digest", lambda s: s.series == "Digest"),
+    ("--series-number", "367", lambda s: s.series_number == "367"),
+    ("--rights", "© P", lambda s: s.rights == "© P"),
+    ("--issn", "0317-8471", lambda s: s.issn == "0317-8471"),
     ("--publisher", "Pub", lambda s: s.publisher == "Pub"),
     ("--description", "Desc", lambda s: s.description == "Desc"),
     ("--pub-date", "2026-09-29", lambda s: s.pub_date == "2026-09-29"),
@@ -136,9 +142,17 @@ def test_manifest_flag_builds_from_manifest(tmp_path, captured_build):
 FULL_MANIFEST = """
 posts = ["one", "two"]
 
+[sort_names]
+"Felipe De La Hoz" = "De La Hoz, Felipe"
+
 [book]
 title = "T"
-author = "A"
+subtitle = "S"
+editor = "A"
+series = "Digest"
+series_number = 367
+issn = "0317-8471"
+rights = "R"
 publisher = "P"
 description = "D"
 pub_date = "2026-09-29"
@@ -177,7 +191,9 @@ def test_full_manifest(tmp_path):
     path.write_text(FULL_MANIFEST)
     s = build_epub._spec_from_manifest(str(path))
     assert s.source.slugs == ["one", "two"] and s.source.processor == "flaminghydra"
-    assert (s.title, s.author, s.publisher, s.description, s.pub_date, s.isbn, s.lang, s.output) == \
+    assert (s.subtitle, s.series, s.series_number, s.rights, s.issn) == ("S", "Digest", "367", "R", "0317-8471")
+    assert s.sort_names == {"Felipe De La Hoz": "De La Hoz, Felipe"}
+    assert (s.title, s.editor, s.publisher, s.description, s.pub_date, s.isbn, s.lang, s.output) == \
         ("T", "A", "P", "D", "2026-09-29", "978", "en-US", "o.epub")
     assert (s.cover, s.copyright_file, s.imprint_file, s.foreword_file, s.intro_file,
             s.notes_file, s.acknowledgements_file, s.about_file) == \

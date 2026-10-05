@@ -25,13 +25,25 @@ section[epub|type~="halftitlepage"]{
 }
 
 section[epub|type~="titlepage"] h1{
-	margin: 0 0 2em;
+	margin: 0 0 1em;
 }
 
 section[epub|type~="titlepage"] p,
 section[epub|type~="halftitlepage"] p{
 	margin: .5em 0;
 	text-indent: 0;
+}
+
+section[epub|type~="titlepage"] p.subtitle,
+section[epub|type~="halftitlepage"] p.subtitle{
+	font-size: 1.25em;
+	margin-bottom: 1.5em;
+}
+
+section[epub|type~="titlepage"] p.series{
+	font-size: smaller;
+	font-variant: small-caps;
+	margin-bottom: 2em;
 }
 
 section[epub|type~="titlepage"] p.publisher{

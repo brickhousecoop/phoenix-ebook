@@ -84,7 +84,11 @@ class _Writer(epub.EpubWriter):
         return nav.replace(b'<nav epub:type="landmarks">', b'<nav epub:type="landmarks" hidden="hidden">')
 
 
-class MissingContentFile(ValueError):
+class InvalidBookSpec(ValueError):
+    """The BookSpec can't be built as given (the message says why)."""
+
+
+class MissingContentFile(InvalidBookSpec):
     """A content-file option names a path that doesn't exist."""
 
 
@@ -100,6 +104,22 @@ CONTENT_FILE_OPTIONS = {
     "about_file": "--about-file / [content] about_file",
     "css": "--css / [style] css",
 }
+
+
+def validate_spec(spec: BookSpec) -> None:
+    """Raise InvalidBookSpec (or MissingContentFile) if ``spec`` can't be built.
+
+    Call before fetching posts, so mistakes fail fast. ``build()`` also calls it.
+    """
+    if spec.series_number and not spec.series:
+        raise InvalidBookSpec("--series-number / [book] series_number needs --series / [book] series")
+    if spec.issn and not spec.series:
+        raise InvalidBookSpec("--issn / [book] issn identifies a series, so it needs --series / [book] series")
+    if spec.isbn and _isbn_identifier(spec.isbn)[1] is None:
+        raise InvalidBookSpec(f"--isbn / [book] isbn: {spec.isbn!r} is not a valid ISBN-10 or ISBN-13")
+    if spec.issn and normalize_issn(spec.issn) is None:
+        raise InvalidBookSpec(f"--issn / [book] issn: {spec.issn!r} is not a valid ISSN")
+    check_content_files(spec)
 
 
 def check_content_files(spec: BookSpec) -> None:
@@ -163,10 +183,118 @@ def _article_header(post: Post, feature_figure: str) -> str:
     return "\n".join(parts)
 
 
+def sort_name(name: str, overrides: dict[str, str]) -> str:
+    """'J.D. Connor' -> 'Connor, J.D.' (last word first), unless overridden."""
+    if name in overrides:
+        return overrides[name]
+    words = name.split()
+    if len(words) < 2 or "," in name:
+        return name
+    return f"{words[-1]}, {' '.join(words[:-1])}"
+
+
+def _isbn_check_ok(digits: str) -> bool:
+    if len(digits) == 13 and digits.isdigit():
+        return sum(int(d) * (3 if i % 2 else 1) for i, d in enumerate(digits)) % 10 == 0
+    if len(digits) == 10 and digits[:9].isdigit() and (digits[9].isdigit() or digits[9] == "X"):
+        values = [int(d) for d in digits[:9]] + [10 if digits[9] == "X" else int(digits[9])]
+        return sum(v * (10 - i) for i, v in enumerate(values)) % 11 == 0
+    return False
+
+
+def _isbn_identifier(isbn: str) -> tuple[str, str | None]:
+    """'979-8-99-202554-5' -> ('urn:isbn:9798992025545', '15'): the URN and its ONIX
+    codelist 5 type ('15' ISBN-13, '02' ISBN-10), or None as the type if invalid."""
+    digits = "".join(ch for ch in isbn if ch.isalnum()).upper()
+    valid = _isbn_check_ok(digits)
+    return f"urn:isbn:{digits}", {13: "15", 10: "02"}.get(len(digits)) if valid else None
+
+
+def normalize_issn(issn: str) -> str | None:
+    """'03178471' / '0317-8471' -> '0317-8471'; None if it isn't a valid ISSN (check digit may be X)."""
+    chars = "".join(ch for ch in issn if ch.isalnum()).upper()
+    if len(chars) != 8 or not chars[:7].isdigit() or not (chars[7].isdigit() or chars[7] == "X"):
+        return None
+    check = (11 - sum(int(d) * (8 - i) for i, d in enumerate(chars[:7])) % 11) % 11
+    if ("X" if check == 10 else str(check)) != chars[7]:
+        return None
+    return f"{chars[:4]}-{chars[4:]}"
+
+
+def _refine(book, target_id: str, prop: str, value: str, scheme: str | None = None) -> None:
+    attrs = {"refines": f"#{target_id}", "property": prop}
+    if scheme:
+        attrs["scheme"] = scheme
+    book.add_metadata(None, "meta", value, attrs)
+
+
+def _add_metadata(book, spec: BookSpec, posts: list[Post]) -> None:
+    """Package metadata: identifier, titles, credits, series and the rest."""
+    if spec.isbn:
+        urn, isbn_type = _isbn_identifier(spec.isbn)
+        book.set_identifier(urn)
+        if isbn_type:
+            _refine(book, book.IDENTIFIER_ID, "identifier-type", isbn_type, "onix:codelist5")
+    else:
+        book.set_identifier(f"urn:uuid:{uuid.uuid4()}")
+
+    book.title = spec.title
+    book.add_metadata("DC", "title", spec.title, {"id": "title"})
+    if spec.subtitle:
+        _refine(book, "title", "title-type", "main")
+        book.add_metadata("DC", "title", spec.subtitle, {"id": "subtitle"})
+        _refine(book, "subtitle", "title-type", "subtitle")
+        book.add_metadata("DC", "title", f"{spec.title}: {spec.subtitle}", {"id": "fulltitle"})
+        _refine(book, "fulltitle", "title-type", "expanded")
+    book.set_language(spec.lang)
+
+    # Credits: the editor is the creator and post authors are contributors, so
+    # apps that show only the first creator don't shelve an anthology under one
+    # writer. Without an editor, the post authors are the creators.
+    authors: list[str] = []
+    for post in posts:
+        for author in post.authors:
+            if author.name not in authors:
+                authors.append(author.name)
+    if spec.editor:
+        book.add_metadata("DC", "creator", spec.editor, {"id": "editor"})
+        _refine(book, "editor", "role", "edt", "marc:relators")
+        if spec.editor in spec.sort_names:
+            _refine(book, "editor", "file-as", spec.sort_names[spec.editor])
+    element, prefix = ("contributor", "contributor") if spec.editor else ("creator", "author")
+    for n, name in enumerate(authors, start=1):
+        book.add_metadata("DC", element, name, {"id": f"{prefix}-{n}"})
+        _refine(book, f"{prefix}-{n}", "role", "aut", "marc:relators")
+        _refine(book, f"{prefix}-{n}", "file-as", sort_name(name, spec.sort_names))
+
+    if spec.series:
+        book.add_metadata(None, "meta", spec.series, {"property": "belongs-to-collection", "id": "series"})
+        _refine(book, "series", "collection-type", "series")
+        if spec.series_number:
+            _refine(book, "series", "group-position", str(spec.series_number))
+        if spec.issn:
+            _refine(book, "series", "dcterms:identifier", f"urn:issn:{normalize_issn(spec.issn)}")
+
+    if spec.publisher:
+        book.add_metadata("DC", "publisher", spec.publisher)
+    if spec.description:
+        book.add_metadata("DC", "description", spec.description)
+    if spec.pub_date:
+        book.add_metadata("DC", "date", spec.pub_date)
+    if spec.rights:
+        book.add_metadata("DC", "rights", spec.rights)
+
+
 def _title_page(spec: BookSpec) -> str:
     parts = ['<section epub:type="titlepage">', f"<h1>{html.escape(spec.title)}</h1>"]
-    if spec.author:
-        parts.append(f'<p class="author">{html.escape(spec.author)}</p>')
+    if spec.subtitle:
+        parts.append(f'<p class="subtitle">{html.escape(spec.subtitle)}</p>')
+    if spec.series:
+        series = spec.series + (f" · No. {spec.series_number}" if spec.series_number else "")
+        series += f" · ISSN {normalize_issn(spec.issn)}" if spec.issn else ""
+        parts.append(f'<p class="series">{html.escape(series)}</p>')
+    if spec.editor:
+        parts.append(f'<p class="editor">{html.escape(spec.editor)}</p>')
     if spec.publisher:
         parts.append(f'<p class="publisher">{html.escape(spec.publisher)}</p>')
     parts.append("</section>")
@@ -174,8 +302,9 @@ def _title_page(spec: BookSpec) -> str:
 
 
 def _half_title_page(spec: BookSpec) -> str:
+    subtitle = f'<p class="subtitle">{html.escape(spec.subtitle)}</p>\n' if spec.subtitle else ""
     return (f'<section epub:type="halftitlepage">\n'
-            f'<p class="title">{html.escape(spec.title)}</p>\n</section>')
+            f'<p class="title">{html.escape(spec.title)}</p>\n{subtitle}</section>')
 
 
 def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
@@ -212,23 +341,12 @@ def build(
     Images that can't be fetched as valid images are left out of the book and
     reported in BuildResult.problems; they never fail the build.
     """
-    check_content_files(spec)
+    validate_spec(spec)
+    posts = list(posts)
     session = session or requests.Session()
 
     book = epub.EpubBook()
-    book.set_identifier(spec.isbn or str(uuid.uuid4()))
-    book.set_title(spec.title)
-    book.set_language(spec.lang)
-
-    if spec.author:
-        book.add_metadata("DC", "creator", spec.author)
-    if spec.publisher:
-        book.add_metadata("DC", "publisher", spec.publisher)
-    if spec.description:
-        book.add_metadata("DC", "description", spec.description)
-    if spec.pub_date:
-        book.add_metadata("DC", "date", spec.pub_date)
-    book.add_metadata("DC", "rights", "© All rights reserved.")
+    _add_metadata(book, spec, posts)
 
     styles = [
         epub.EpubItem(uid=f"style-{Path(name).stem}", file_name=f"style/{name}", media_type="text/css",

@@ -16,7 +16,8 @@ def test_default_book_with_cover_is_valid(build_book, tmp_path):
              title="Cats & <Dogs>", authors=[Author("A", "https://x/a/")],
              published_at="2026-08-24T20:04:00-04:00", feature_image=U + "f.png", feature_image_alt="f")
     book = build_book(p, {U + "a.png": [ok(png())], U + "f.png": [ok(png("blue"))]},
-                      cover=str(cover), author="Ed", publisher="Pub")
+                      cover=str(cover), editor="Ed", publisher="Pub",
+                      subtitle="Sub", series="Digest", series_number="367", issn="0317-8471", rights="© 2026 Pub", isbn="979-8-99-202554-5")
     assert_valid_epub(book.path)
 
 

@@ -50,7 +50,12 @@ class BookSpec:
     """
 
     title: str = "Collected Posts"
-    author: str | None = None
+    subtitle: str | None = None
+    editor: str | None = None  # the book's creator; post authors become contributors
+    series: str | None = None
+    series_number: str | None = None
+    issn: str | None = None  # identifies the series (all issues), not this book
+    rights: str | None = None  # dc:rights text; omitted when None
     publisher: str | None = None
     description: str | None = None
     pub_date: str | None = None
@@ -67,6 +72,7 @@ class BookSpec:
     about_file: str | None = None
     placeholders: bool = True  # placeholder pages for front/back-matter sections without a file
     css: str | None = None  # user stylesheet, linked after the built-in ones
+    sort_names: dict[str, str] = field(default_factory=dict)  # name -> "Last, First" overrides
 
     optimize_images: bool = True
     image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing

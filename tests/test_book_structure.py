@@ -58,14 +58,14 @@ def test_intro_sits_after_foreword_before_half_title(build_book, tmp_path):
 
 
 def test_title_page_content(build_book):
-    page = build_book(TWO_POSTS, title="Cats & <Dogs>", author="Ed", publisher="Pub").text("titlepage.xhtml")
+    page = build_book(TWO_POSTS, title="Cats & <Dogs>", editor="Ed", publisher="Pub").text("titlepage.xhtml")
     assert "<h1>Cats &amp; &lt;Dogs&gt;</h1>" in page
-    assert '<p class="author">Ed</p>' in page and '<p class="publisher">Pub</p>' in page
+    assert '<p class="editor">Ed</p>' in page and '<p class="publisher">Pub</p>' in page
 
 
 def test_title_page_omits_absent_fields(build_book):
     page = build_book(TWO_POSTS, title="Just A Title").text("titlepage.xhtml")
-    assert "<h1>Just A Title</h1>" in page and "author" not in page and "publisher" not in page
+    assert "<h1>Just A Title</h1>" in page and "editor" not in page and "publisher" not in page
 
 
 def test_no_placeholders_without_files(build_book):

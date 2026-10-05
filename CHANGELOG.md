@@ -5,6 +5,9 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 ## Unreleased
 
 ### Changed
+- **Credits** (#5): `--author` is now `--editor` (the old flag still works). The editor is credited as the book's creator, and each post's author as a contributor with a sort name ("Connor, J.D."), so reading apps don't shelve an anthology under one writer. Without an editor, post authors are the creators. For library use, `BookSpec.author` is renamed `BookSpec.editor`.
+- **No default rights statement** (#5): the hard-coded "© All rights reserved." is gone; pass `--rights` to include one.
+- **Identifier format** (#5): ISBNs are stored as `urn:isbn:…` (typed as ISBN-13 or ISBN-10); books without one get `urn:uuid:…`.
 - **New look** (#7): books now use Standard Ebooks' `core.css` plus phoenix-ebook's own stylesheet: centered title page, small-caps dates and bylines, book-style paragraphs, figures kept on one screen with their captions, and a "Contents" page without numbering. The previous stylesheet forced the Georgia font; now no font is set, so readers' own font settings apply. Tall images are capped to the screen height instead of overflowing.
 - **Book structure** (#6): a generated **title page** now opens the book, followed by copyright, imprint, the **contents page** (moved here from page 2), foreword and introduction; a **half-title page** divides front matter from the chapters. The contents page starts at the foreword: it no longer lists the title page, copyright, imprint, the half-title page or itself.
 - **No cover page** (#6): the cover is declared as the book's cover image only, as Kindle's guidelines recommend; reading apps show it in the library. The book opens on the title page.
@@ -22,6 +25,8 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 - **Titles containing `&` or `<`** no longer produce an invalid EPUB.
 
 ### Added
+- `--subtitle`, `--series`, `--series-number`, `--issn`, `--rights` and the manifest's `[sort_names]` table (#5). The ISSN identifies the series and is shown with it on the title page.
+- ISBN and ISSN validation (#5): an invalid number (wrong length or check digit) stops the build before anything is fetched. Subtitle and series appear on the title page.
 - `--css` (manifest: `[style] css`): add your own stylesheet, applied after the built-in ones.
 - `--no-placeholders` (manifest: `[content] placeholders = false`): leave out sections that have no file instead of adding placeholder pages.
 - EPUB landmarks for the title page, contents page and start of the text, which some reading apps use to decide where a book opens.

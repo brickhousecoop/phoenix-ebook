@@ -16,7 +16,7 @@ except ImportError:
 import requests
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
-from phoenix_ebook.epub_builder import MissingContentFile, build, check_content_files
+from phoenix_ebook.epub_builder import InvalidBookSpec, build, validate_spec
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
@@ -31,6 +31,13 @@ def _default_processor_for(url: str) -> str:
     return "generic"
 
 
+def _one_editor(editor: str | None, author: str | None, names: str) -> str | None:
+    """Resolve the editor from its two spellings; both given and different is an error."""
+    if editor and author and editor != author:
+        raise InvalidBookSpec(f"{names} disagree ({editor!r} vs {author!r}); give just one")
+    return editor or author
+
+
 def _spec_from_args(args) -> BookSpec:
     source = SourceSpec(
         platform=args.platform,
@@ -40,7 +47,12 @@ def _spec_from_args(args) -> BookSpec:
     )
     return BookSpec(
         title=args.title,
-        author=args.author,
+        subtitle=args.subtitle,
+        editor=_one_editor(args.editor, args.author, "--editor and --author"),
+        series=args.series,
+        series_number=args.series_number,
+        issn=args.issn,
+        rights=args.rights,
         publisher=args.publisher,
         description=args.description,
         pub_date=args.pub_date,
@@ -84,7 +96,13 @@ def _spec_from_manifest(path: str) -> BookSpec:
     )
     return BookSpec(
         title=book.get("title", "Collected Posts"),
-        author=book.get("author"),
+        subtitle=book.get("subtitle"),
+        editor=_one_editor(book.get("editor"), book.get("author"), "[book] editor and author"),
+        series=book.get("series"),
+        series_number=str(book["series_number"]) if "series_number" in book else None,
+        issn=book.get("issn"),
+        rights=book.get("rights"),
+        sort_names=dict(data.get("sort_names", {})),
         publisher=book.get("publisher"),
         description=book.get("description"),
         pub_date=book.get("pub_date"),
@@ -110,7 +128,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
 
 def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     assert spec.source is not None
-    check_content_files(spec)  # before any network access, so typos fail fast
+    validate_spec(spec)  # before any network access, so mistakes fail fast
     store = SecretStore(override=override_secret)
     secret = store.get(spec.source.platform, extract_domain(spec.source.url))
 
@@ -168,7 +186,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # metadata
     parser.add_argument("--title", default="Collected Posts", help="Book title")
-    parser.add_argument("--author", help="Book author / editor")
+    parser.add_argument("--editor", help="Who compiled the book; credited as its creator (post authors become contributors)")
+    parser.add_argument("--author", help="Old name for --editor (still accepted)")
+    parser.add_argument("--subtitle", help="Book subtitle")
+    parser.add_argument("--series", help="Series the book belongs to, e.g. 'Flaming Hydra Digest'")
+    parser.add_argument("--series-number", help="The book's number in the series (requires --series)")
+    parser.add_argument("--issn", help="ISSN of the series (requires --series); one number for all issues")
+    parser.add_argument("--rights", help="Rights statement for the book's metadata (omitted if not given)")
     parser.add_argument("--publisher", help="Publisher name")
     parser.add_argument("--description", help="Book description")
     parser.add_argument("--pub-date", help="Publication date, e.g. 2026-09-29")
@@ -215,16 +239,12 @@ def main(argv: list[str] | None = None) -> None:
         _cmd_set_secret(args, prefer_keyring=True)
         return
 
-    if args.manifest:
-        spec = _spec_from_manifest(args.manifest)
-    else:
-        if not args.slugs:
-            parser.error("provide post slugs or use --manifest")
-        spec = _spec_from_args(args)
-
+    if not args.manifest and not args.slugs:
+        parser.error("provide post slugs or use --manifest")
     try:
+        spec = _spec_from_manifest(args.manifest) if args.manifest else _spec_from_args(args)
         _run_build(spec, override_secret=args.admin_key)
-    except MissingContentFile as exc:
+    except InvalidBookSpec as exc:
         sys.exit(f"error: {exc}")
 
 
