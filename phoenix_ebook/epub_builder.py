@@ -136,10 +136,8 @@ def build(
         cover_page.id = "cover"
         pages.append(cover_page)
 
-        book.add_metadata(
-            None, "reference", "",
-            {"type": "cover", "title": "Cover", "href": "cover.xhtml"},
-        )
+        # <reference> belongs in the OPF <guide>, not <metadata> (epubcheck RSC-005).
+        book.guide.append({"type": "cover", "title": "Cover", "href": "cover.xhtml"})
 
     # ---- Front matter ----
     for file_attr, page_title, file_name, placeholder in [
