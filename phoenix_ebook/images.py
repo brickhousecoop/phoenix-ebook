@@ -1,3 +1,4 @@
+"""Fetching, validating and optimizing images embedded in chapters."""
 from __future__ import annotations
 
 import io

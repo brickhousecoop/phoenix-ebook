@@ -1,3 +1,4 @@
+"""Assembles an EPUB from a BookSpec and fetched posts: chapters, images, front/back matter, navigation."""
 from __future__ import annotations
 
 import hashlib

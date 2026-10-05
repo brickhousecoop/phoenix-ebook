@@ -1,3 +1,4 @@
+"""HTML processors: per-site cleanup of post HTML before it becomes a chapter, and their registry."""
 from __future__ import annotations
 
 from bs4 import BeautifulSoup, Comment, NavigableString
@@ -50,18 +51,34 @@ def _strip_web_markup(soup: BeautifulSoup) -> None:
 
 
 class HtmlProcessor:
+    """Cleans a post's HTML for the book. Subclass it for site-specific quirks.
+
+    Set ``name`` (the ``--processor`` value), decorate with ``@register_processor``
+    and import the module in ``processors/__init__.py``. A processor is picked from
+    the site URL unless ``--processor`` is given.
+    """
+
     name: str = "generic"
 
     def display_title(self, post: Post) -> str:
+        """The chapter's title in the table of contents and the page ``<title>``."""
         return post.title
 
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
+        """Modify ``soup`` (the post body, plus its feature image figure) in place.
+
+        Runs before images are fetched. Overrides must call ``super().clean()``
+        first: this base implementation removes scripts/iframes/styles and all
+        web-only editor markup (``kg-*`` classes, inline styles, comments, …).
+        """
         for tag in soup.find_all(["script", "iframe", "style"]):
             tag.decompose()
         _strip_web_markup(soup)
 
 
 class GenericProcessor(HtmlProcessor):
+    """The default processor: only the shared cleanup."""
+
     name = "generic"
 
 
@@ -69,11 +86,13 @@ _REGISTRY: dict[str, type[HtmlProcessor]] = {}
 
 
 def register_processor(cls: type[HtmlProcessor]) -> type[HtmlProcessor]:
+    """Class decorator: make ``cls`` available as ``--processor cls.name``."""
     _REGISTRY[cls.name] = cls
     return cls
 
 
 def get_processor(name: str) -> HtmlProcessor:
+    """Return a new instance of the processor registered as ``name``."""
     try:
         return _REGISTRY[name]()
     except KeyError:

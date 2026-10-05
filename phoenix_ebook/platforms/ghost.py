@@ -1,3 +1,4 @@
+"""Ghost platform: posts via the Ghost Admin API, authenticated with a short-lived JWT."""
 from __future__ import annotations
 
 import base64
@@ -19,6 +20,7 @@ def _b64url(data: bytes) -> str:
 
 
 def make_token(admin_key: str) -> str:
+    """Sign a 5-minute Admin API JWT from an ``id:secret`` Admin API key (secret is hex)."""
     key_id, key_secret = admin_key.strip().split(":")
     header = json.dumps({"alg": "HS256", "typ": "JWT", "kid": key_id}).encode()
     payload = json.dumps(
@@ -31,6 +33,12 @@ def make_token(admin_key: str) -> str:
 
 @register_platform
 class GhostPlatform(Platform):
+    """Fetches posts (``formats=html``) from a Ghost site's Admin API.
+
+    Publication times are converted from UTC to the site's configured timezone,
+    read once per site from ``/ghost/api/admin/site/``.
+    """
+
     name = "ghost"
 
     def __init__(self) -> None:

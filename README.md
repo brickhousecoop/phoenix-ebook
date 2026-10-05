@@ -124,6 +124,8 @@ quality = 85
 | Acknowledgements | `--acknowledgements-file` | placeholder page |
 | About This Book | `--about-file` | placeholder page |
 
+Each chapter opens with a header: the post's publication date (in the site's timezone), its title, a "By …" byline linking to each author's page, and the post's feature image with its caption. The table of contents lists plain post titles.
+
 Content files are HTML fragments, inserted as-is (include your own `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
 ### Images
@@ -148,13 +150,39 @@ phoenix_ebook/
 ├── platforms/           # post sources (Ghost today)
 ├── processors/          # per-site HTML cleanup
 ├── epub_builder.py      # EPUB assembly
-├── images.py            # image resizing and re-encoding
-├── models.py            # Post, BookSpec, SourceSpec
+├── images.py            # image fetching, validation and optimization
+├── models.py            # Post, Author, BookSpec, SourceSpec, BuildResult, BuildProblem
 └── secrets.py           # API key storage
 ```
 
-- **New platform:** subclass `Platform` in `phoenix_ebook/platforms/`, decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`.
-- **New site processor:** subclass `HtmlProcessor` in `phoenix_ebook/processors/`, decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. See `flaminghydra.py` for an example.
+**New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name`, decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, authors as `Author(name, url)`, `published_at` in the site's own timezone, and the feature image fields if the platform has them. The docstring on `Platform.fetch_post` has the full contract.
+
+**New site processor.** Subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. Overrides of `clean()` **must call `super().clean()` first**; that is where all the shared cleanup happens. See `flaminghydra.py` for an example.
+
+### Using it as a library
+
+```python
+import requests
+from phoenix_ebook.epub_builder import build
+from phoenix_ebook.models import BookSpec
+from phoenix_ebook.platforms.base import get_platform
+from phoenix_ebook.processors.base import get_processor
+import phoenix_ebook.platforms, phoenix_ebook.processors  # register built-ins
+
+session = requests.Session()
+ghost = get_platform("ghost")
+posts = [ghost.fetch_post(session, "https://flaminghydra.ghost.io", admin_key, slug)
+         for slug in ["fender-bender", "vigil-vacancy"]]
+
+result = build(BookSpec(title="My Book", output="book.epub"), posts,
+               get_processor("flaminghydra"), session=session,
+               image_base_url="https://flaminghydra.ghost.io")
+print(result.path)
+for problem in result.problems:   # e.g. images that couldn't be downloaded
+    print(problem.kind, problem.post_slug, problem.url, problem.detail)
+```
+
+`build()` never fails because of an image; those come back in `result.problems`.
 
 ## Development
 
@@ -165,6 +193,10 @@ uv pip install --python .venv/bin/python -r requirements-dev.txt   # adds pytest
 ```
 
 The suite runs offline (no network, no API key). The epubcheck tests need Java and the downloaded validator; without them they are skipped, not failed.
+
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md) for changes that affect how books come out.
 
 ## License
 

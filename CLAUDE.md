@@ -10,7 +10,7 @@ The code is already split for that trajectory — keep the seams.
 ## Layout
 
 ```
-build_epub.py                   # thin CLI shim
+build_epub.py                   # CLI: flags/manifest → BookSpec, runs the build, reports problems
 phoenix_ebook/
 ├── models.py                   # Post, Author, BookSpec, SourceSpec, BuildResult/BuildProblem
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
@@ -18,7 +18,7 @@ phoenix_ebook/
 │   ├── base.py                 # Platform ABC + registry
 │   └── ghost.py                # GhostPlatform (JWT + Admin API)
 ├── processors/
-│   ├── base.py                 # HtmlProcessor ABC + GenericProcessor
+│   ├── base.py                 # HtmlProcessor (shared cleanup in clean()) + GenericProcessor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
 └── epub_builder.py             # EPUB assembly
@@ -42,7 +42,8 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 
 - Run the test suite before committing (`.venv/bin/python -m pytest`); changes that add or change behavior come with tests. Tests are offline: use the `FakeSession` / `build_book` fixtures in `tests/conftest.py`, never the network.
 - Keep CLI flags back-compatible — the user has existing invocations.
-- When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import.
+- When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import. Processor `clean()` overrides must call `super().clean()`.
+- Document contracts, not mechanics: public API and extension points get docstrings; trivial helpers don't. Changes that alter how books come out get a CHANGELOG.md entry.
 
 ## Agent skills
 

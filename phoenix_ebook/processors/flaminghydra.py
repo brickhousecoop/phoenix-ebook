@@ -1,3 +1,4 @@
+"""Flaming Hydra (flaminghydra.com) quirks."""
 from __future__ import annotations
 
 from bs4 import BeautifulSoup
@@ -12,6 +13,9 @@ class FlamingHydraProcessor(HtmlProcessor):
 
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
         super().clean(soup, post)
+        # Posts end with an <hr> and a line inviting readers to the site's comments
+        # ("You may Shred in the Comments Section", linking to #comments). It means
+        # nothing in a book, so drop the first such <hr> + paragraph pair.
         for hr in soup.find_all("hr"):
             next_sib = hr.find_next_sibling()
             if next_sib and next_sib.name == "p":

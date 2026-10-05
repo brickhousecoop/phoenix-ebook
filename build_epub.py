@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Command-line entry point: turn CLI flags or a TOML manifest into a BookSpec and build it."""
 from __future__ import annotations
 
 import argparse
@@ -147,6 +148,7 @@ def _cmd_set_secret(args, *, prefer_keyring: bool) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """All CLI flags. Existing flags must keep working (users have saved invocations)."""
     parser = argparse.ArgumentParser(description="Build an EPUB from posts fetched from a platform.")
     parser.add_argument("--url", default="https://flaminghydra.ghost.io", help="Site URL")
     parser.add_argument("--platform", default="ghost", help="Source platform (default: ghost)")
@@ -191,6 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run the CLI: store a secret (--set-secret[-file]) or build a book."""
     parser = build_parser()
     args = parser.parse_args(argv)
 

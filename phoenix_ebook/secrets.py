@@ -1,3 +1,8 @@
+"""Platform credentials, keyed by (platform, domain).
+
+Storage names (``~/.phoenix_secrets.json``, ``PHOENIX_SECRET_*``, keyring service
+``phoenix:<platform>``) are shared with other Phoenix modules on purpose.
+"""
 from __future__ import annotations
 
 import json
@@ -19,11 +24,13 @@ KEYRING_SERVICE_PREFIX = "phoenix"
 
 
 def extract_domain(url: str) -> str:
+    """'https://www.Example.com/x' -> 'example.com' (the key secrets are stored under)."""
     netloc = urlparse(url).netloc.lower()
     return netloc[4:] if netloc.startswith("www.") else netloc
 
 
 def env_var_name(platform: str, domain: str) -> str:
+    """('ghost', 'site.ghost.io') -> 'PHOENIX_SECRET_GHOST_SITE_GHOST_IO'."""
     slug = re.sub(r"[^a-z0-9]", "_", f"{platform}_{domain}").upper()
     return f"PHOENIX_SECRET_{slug}"
 
@@ -80,10 +87,17 @@ def _migrate_legacy() -> None:
 
 
 class SecretStore:
+    """Looks up and stores secrets. A legacy ``~/.ghost_epub_secrets.json`` is
+    migrated into the shared file on first access (the old file is kept as
+    ``.json.migrated``)."""
+
     def __init__(self, override: str | None = None) -> None:
         self._override = override
 
     def get(self, platform: str, domain: str) -> str:
+        """Return the secret, checking in order: constructor override, environment
+        variable, ``~/.phoenix_secrets.json``, OS keyring. Raises RuntimeError with
+        setup instructions if none has it."""
         if self._override:
             return self._override
 
@@ -112,6 +126,9 @@ class SecretStore:
         )
 
     def set(self, platform: str, domain: str, secret: str, *, prefer_keyring: bool = True) -> str:
+        """Store a secret in the OS keyring (verified by reading it back), or in
+        ``~/.phoenix_secrets.json`` (mode 600) if that fails or ``prefer_keyring``
+        is False. Returns where it was stored."""
         if prefer_keyring and keyring is not None:
             try:
                 keyring.set_password(_keyring_service(platform), domain, secret)

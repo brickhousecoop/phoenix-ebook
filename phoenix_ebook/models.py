@@ -1,3 +1,4 @@
+"""Data passed between platforms, processors, the builder and the CLI."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -8,12 +9,16 @@ from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 
 @dataclass
 class Author:
+    """A post's author, as shown in the chapter byline."""
+
     name: str
     url: str | None = None  # profile page, linked from the byline
 
 
 @dataclass
 class Post:
+    """One post from a platform, ready to become a chapter. See ``Platform.fetch_post``."""
+
     slug: str
     title: str
     html: str
@@ -27,6 +32,8 @@ class Post:
 
 @dataclass
 class SourceSpec:
+    """Where a book's posts come from: platform, site URL, processor, and slugs in reading order."""
+
     platform: str
     url: str
     processor: str
@@ -35,6 +42,13 @@ class SourceSpec:
 
 @dataclass
 class BookSpec:
+    """Everything needed to build one book. Built from CLI flags or a TOML manifest.
+
+    The manifest is also the shape the future web UI will produce, so keep the
+    two in sync when adding fields. Content-file fields are paths to HTML
+    fragments (the intro also accepts plain text).
+    """
+
     title: str = "Collected Posts"
     author: str | None = None
     publisher: str | None = None
@@ -72,5 +86,7 @@ class BuildProblem:
 
 @dataclass
 class BuildResult:
+    """What ``build()`` returns: the EPUB's path and any non-fatal problems."""
+
     path: str
     problems: list[BuildProblem] = field(default_factory=list)
