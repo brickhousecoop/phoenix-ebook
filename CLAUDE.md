@@ -20,7 +20,8 @@ phoenix_ebook/
 ├── processors/
 │   ├── base.py                 # HtmlProcessor ABC + GenericProcessor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
-└── epub_builder.py             # EPUB assembly, image pipeline
+├── images.py                   # optimize_image(): resize + re-encode post images
+└── epub_builder.py             # EPUB assembly
 ```
 
 Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself. Adding site quirks = new processor module. Don't collapse these layers back into `build_epub.py`.

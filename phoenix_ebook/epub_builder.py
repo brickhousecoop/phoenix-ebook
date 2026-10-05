@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 from PIL import Image
 
+from phoenix_ebook.images import optimize_image
 from phoenix_ebook.models import BookSpec, Post
 from phoenix_ebook.processors.base import HtmlProcessor
 
@@ -96,6 +97,7 @@ def build(
 
     pages = []
     image_items: dict[str, epub.EpubItem] = {}
+    image_sizes: dict[str, tuple[int, int] | None] = {}
 
     # ---- Cover ----
     if spec.cover:
@@ -178,11 +180,16 @@ def build(
                 ext = ".jpg"
 
             uid = hashlib.sha1(src.encode()).hexdigest()[:12]
-            fname = f"{chapter_slug}_{uid}{ext}"
 
             if src not in image_items:
                 try:
                     data = session.get(src, timeout=15).content
+                    size = None
+                    if spec.optimize_images:
+                        data, ext, size = optimize_image(
+                            data, ext, max_width=spec.image_max_width, quality=spec.image_quality
+                        )
+                    fname = f"{chapter_slug}_{uid}{ext}"
                     item = epub.EpubItem(
                         uid=f"img_{uid}",
                         file_name=f"images/{fname}",
@@ -191,10 +198,13 @@ def build(
                     )
                     book.add_item(item)
                     image_items[src] = item
+                    image_sizes[src] = size
                 except Exception:
                     continue
 
             img["src"] = image_items[src].file_name
+            if image_sizes.get(src) and img.has_attr("width") and img.has_attr("height"):
+                img["width"], img["height"] = (str(n) for n in image_sizes[src])
             img.attrs.pop("srcset", None)
             img.attrs.pop("sizes", None)
 

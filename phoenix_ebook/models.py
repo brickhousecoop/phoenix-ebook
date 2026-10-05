@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
+
 
 @dataclass
 class Post:
@@ -40,6 +42,10 @@ class BookSpec:
     notes_file: str | None = None
     acknowledgements_file: str | None = None
     about_file: str | None = None
+
+    optimize_images: bool = True
+    image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing
+    image_quality: int = DEFAULT_QUALITY
 
     output: str = "book.epub"
     source: SourceSpec | None = None

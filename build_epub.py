@@ -16,6 +16,7 @@ import requests
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import build
+from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
@@ -52,6 +53,9 @@ def _spec_from_args(args) -> BookSpec:
         notes_file=args.notes_file,
         acknowledgements_file=args.acknowledgements_file,
         about_file=args.about_file,
+        optimize_images=not args.keep_original_images,
+        image_max_width=args.image_max_width,
+        image_quality=args.image_quality,
         output=args.output,
         source=source,
     )
@@ -65,6 +69,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
     book = data.get("book", {})
     source_data = data.get("source", {})
     content = data.get("content", {})
+    images = data.get("images", {})
     slugs = data.get("posts") or source_data.get("slugs") or []
 
     source = SourceSpec(
@@ -89,6 +94,9 @@ def _spec_from_manifest(path: str) -> BookSpec:
         notes_file=content.get("notes_file"),
         acknowledgements_file=content.get("acknowledgements_file"),
         about_file=content.get("about_file"),
+        optimize_images=images.get("optimize", True),
+        image_max_width=images.get("max_width", DEFAULT_MAX_WIDTH),
+        image_quality=images.get("quality", DEFAULT_QUALITY),
         output=book.get("output", "book.epub"),
         source=source,
     )
@@ -155,6 +163,14 @@ def main() -> None:
     parser.add_argument("--notes-file", help="Path to notes HTML/text file")
     parser.add_argument("--acknowledgements-file", help="Path to acknowledgements HTML/text file")
     parser.add_argument("--about-file", help="Path to About This Book HTML/text file")
+
+    # images
+    parser.add_argument("--image-max-width", type=int, default=DEFAULT_MAX_WIDTH,
+                        help=f"Scale post images down to this width in px; 0 = no resizing (default: {DEFAULT_MAX_WIDTH})")
+    parser.add_argument("--image-quality", type=int, default=DEFAULT_QUALITY,
+                        help=f"JPEG quality for re-encoded images, 1-95 (default: {DEFAULT_QUALITY})")
+    parser.add_argument("--keep-original-images", action="store_true",
+                        help="Embed post images exactly as downloaded (no resizing or conversion)")
 
     parser.add_argument("--output", default="book.epub", help="Output EPUB path")
     parser.add_argument("slugs", nargs="*", help="Post slugs to include")

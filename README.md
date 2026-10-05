@@ -97,6 +97,11 @@ url = "https://flaminghydra.ghost.io"
 [content]
 cover = "cover.jpg"
 foreword_file = "foreword.html"
+
+[images]              # optional; these are the defaults
+max_width = 1100
+quality = 85
+# optimize = false    # embed images exactly as downloaded
 ```
 
 `posts` must come before the first `[table]` header — TOML assigns any key after a header to that table.
@@ -121,6 +126,18 @@ foreword_file = "foreword.html"
 
 Content files are HTML fragments, inserted as-is (include your own `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
+### Images
+
+By default, post images are scaled down to at most 1100px wide and re-encoded as JPEG at quality 85, which typically shrinks a book several-fold with no visible loss. Images with real transparency stay PNG (fully transparent borders are trimmed first), animated GIFs and SVGs pass through untouched, and an image is left as-is when re-encoding wouldn't make it smaller.
+
+| Option | Manifest `[images]` | Default |
+|---|---|---|
+| `--image-max-width N` | `max_width` | `1100` (`0` = never resize) |
+| `--image-quality N` | `quality` | `85` |
+| `--keep-original-images` | `optimize = false` | off |
+
+The cover image is handled separately and isn't affected by these options.
+
 ## Extending phoenix-ebook
 
 ```
@@ -128,7 +145,8 @@ build_epub.py            # CLI
 phoenix_ebook/
 ├── platforms/           # post sources (Ghost today)
 ├── processors/          # per-site HTML cleanup
-├── epub_builder.py      # EPUB assembly and image pipeline
+├── epub_builder.py      # EPUB assembly
+├── images.py            # image resizing and re-encoding
 ├── models.py            # Post, BookSpec, SourceSpec
 └── secrets.py           # API key storage
 ```
