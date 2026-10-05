@@ -8,6 +8,20 @@ Builds EPUB books from posts published on blogging and newsletter platforms. Thi
 A single published piece on the source platform (e.g. a Ghost post), with its title, authors, date, body and feature image.
 _Avoid_: Article, entry, story
 
+## Credits
+
+**Editor**:
+The person or group credited with compiling the book (the CLI's `--author`). Shown first, as the book's creator.
+_Avoid_: Author (for the book as a whole), compiler
+
+**Contributor**:
+A writer of one or more of the book's posts. Credited per post in chapter bylines and, in the book's metadata, as an author-role contributor; becomes the book's creator only when there is no editor.
+_Avoid_: Guest author, writer
+
+**Series**:
+A named run of books the book belongs to, with its number in the run (e.g. a monthly digest).
+_Avoid_: Collection (ambiguous with the book itself), volume
+
 ## Book structure
 
 **Chapter**:
