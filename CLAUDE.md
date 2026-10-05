@@ -37,28 +37,27 @@ Legacy `~/.ghost_epub_secrets.json` auto-migrates into the namespaced file under
 
 ## Setup on a fresh machine
 
+Use a project-local venv in `.venv/` (gitignored). Prefer `uv` — on Debian/Ubuntu with system Python 3.12+, `pip install` is blocked (PEP 668) and `python3 -m venv` fails without the `python3.X-venv` package.
 ```
-pip install -r requirements.txt
+uv venv .venv
+uv pip install --python .venv/bin/python -r requirements.txt
 # then store the Ghost admin key once:
-python build_epub.py --set-secret --platform ghost --url https://flaminghydra.ghost.io
+.venv/bin/python build_epub.py --set-secret --platform ghost --url https://flaminghydra.ghost.io
 ```
+Without `uv`: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+
+In a container/sandbox with no OS keyring, use `--set-secret-file` instead of `--set-secret` (writes `~/.phoenix_secrets.json`).
 
 ## Running
 
 CLI (back-compatible with pre-refactor flags, plus `--platform`, `--processor`, `--manifest`):
 ```
-python build_epub.py --url https://flaminghydra.ghost.io \
+.venv/bin/python build_epub.py --url https://flaminghydra.ghost.io \
   --title "My Book" --cover cover.jpg --output book.epub \
   slug-one slug-two slug-three
 ```
 
 Or via TOML manifest (`--manifest book.toml`), which is also the shape the future web UI will produce.
-
-## State / open items
-
-- `main` branch, no remote yet. User plans to provide a GitHub URL to push to.
-- Refactor from monolithic script → `phoenix/` package is committed (`7499745`). Only imports and `--help` have been smoke-tested; **no live end-to-end rebuild has been run against the refactored code** — needs the user's admin key. First priority on resume: rebuild a known book and compare against a pre-refactor `.epub`.
-- Legacy test artifacts (`a-colonoscopy*`, `issue-657*`, `test_hydra.epub`, `t.py`, `token*`, `node_modules/`) sit in the working directory but are excluded via `.gitignore`. Don't clean them up without asking.
 
 ## Conventions
 

@@ -29,3 +29,6 @@ d7da36ed-*.png
 
 # OS
 .DS_Store
+
+# Claude Code local notes
+CLAUDE.local.md
