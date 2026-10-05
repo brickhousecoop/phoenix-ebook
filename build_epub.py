@@ -16,7 +16,7 @@ except ImportError:
 import requests
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
-from phoenix_ebook.epub_builder import build
+from phoenix_ebook.epub_builder import MissingContentFile, build, check_content_files
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
@@ -54,6 +54,7 @@ def _spec_from_args(args) -> BookSpec:
         notes_file=args.notes_file,
         acknowledgements_file=args.acknowledgements_file,
         about_file=args.about_file,
+        placeholders=not args.no_placeholders,
         optimize_images=not args.keep_original_images,
         image_max_width=args.image_max_width,
         image_quality=args.image_quality,
@@ -95,6 +96,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
         notes_file=content.get("notes_file"),
         acknowledgements_file=content.get("acknowledgements_file"),
         about_file=content.get("about_file"),
+        placeholders=content.get("placeholders", True),
         optimize_images=images.get("optimize", True),
         image_max_width=images.get("max_width", DEFAULT_MAX_WIDTH),
         image_quality=images.get("quality", DEFAULT_QUALITY),
@@ -105,6 +107,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
 
 def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     assert spec.source is not None
+    check_content_files(spec)  # before any network access, so typos fail fast
     store = SecretStore(override=override_secret)
     secret = store.get(spec.source.platform, extract_domain(spec.source.url))
 
@@ -178,6 +181,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--notes-file", help="Path to notes HTML/text file")
     parser.add_argument("--acknowledgements-file", help="Path to acknowledgements HTML/text file")
     parser.add_argument("--about-file", help="Path to About This Book HTML/text file")
+    parser.add_argument("--no-placeholders", action="store_true",
+                        help="Leave out front/back-matter sections that have no file, instead of a placeholder page")
 
     # images
     parser.add_argument("--image-max-width", type=int, default=DEFAULT_MAX_WIDTH,
@@ -211,7 +216,10 @@ def main(argv: list[str] | None = None) -> None:
             parser.error("provide post slugs or use --manifest")
         spec = _spec_from_args(args)
 
-    _run_build(spec, override_secret=args.admin_key)
+    try:
+        _run_build(spec, override_secret=args.admin_key)
+    except MissingContentFile as exc:
+        sys.exit(f"error: {exc}")
 
 
 if __name__ == "__main__":

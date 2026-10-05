@@ -26,8 +26,6 @@ CSS = """
 body { font-family: Georgia, serif; line-height: 1.6; margin: 1em; }
 img { max-width: 100%; height: auto; display: block; margin: 1em 0; }
 h1, h2, h3 { font-family: sans-serif; }
-.cover { text-align: center; margin: 0; padding: 0; }
-.cover img { max-width: 100%; height: auto; }
 """
 
 
@@ -50,7 +48,7 @@ def wrap_text_as_html(title: str, text: str) -> str:
     if text.strip().startswith("<"):
         return text
     paragraphs = "".join(f"<p>{line}</p>" for line in text.splitlines() if line.strip())
-    return f"<h1>{title}</h1>\n{paragraphs}"
+    return f"<h2>{title}</h2>\n{paragraphs}"
 
 
 def _add_page(book, css, title, file_name, content, lang):
@@ -63,10 +61,55 @@ def _add_page(book, css, title, file_name, content, lang):
     return page
 
 
-def _load_or_placeholder(path, title, placeholder_text):
-    if path and Path(path).exists():
+def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool) -> str | None:
+    """A section's HTML: its file, else a placeholder page, else None (section omitted)."""
+    if path:
         return Path(path).read_text(encoding="utf-8").strip()
-    return f"<h1>{title}</h1>\n<p>{placeholder_text}</p>"
+    if use_placeholder:
+        return f"<h2>{title}</h2>\n<p>{placeholder_text}</p>"
+    return None
+
+
+class _Writer(epub.EpubWriter):
+    """ebooklib's writer, with two fixes to the landmarks nav it generates:
+
+    - EPUB 3 landmark terms where ebooklib reuses EPUB 2 guide types;
+    - ``hidden``, so the landmarks list (meant for reading apps) doesn't render on
+      the contents page, which is in the reading order.
+    """
+
+    def _get_nav(self, item):
+        nav = super()._get_nav(item)
+        nav = nav.replace(b'epub:type="title-page"', b'epub:type="titlepage"')
+        return nav.replace(b'<nav epub:type="landmarks">', b'<nav epub:type="landmarks" hidden="hidden">')
+
+
+class MissingContentFile(ValueError):
+    """A content-file option names a path that doesn't exist."""
+
+
+# BookSpec field -> how the user spelled it, for error messages.
+CONTENT_FILE_OPTIONS = {
+    "cover": "--cover / [content] cover",
+    "copyright_file": "--copyright-file / [content] copyright_file",
+    "imprint_file": "--imprint-file / [content] imprint_file",
+    "foreword_file": "--foreword-file / [content] foreword_file",
+    "intro_file": "--intro-file / [content] intro_file",
+    "notes_file": "--notes-file / [content] notes_file",
+    "acknowledgements_file": "--acknowledgements-file / [content] acknowledgements_file",
+    "about_file": "--about-file / [content] about_file",
+}
+
+
+def check_content_files(spec: BookSpec) -> None:
+    """Raise MissingContentFile if any content-file path in ``spec`` doesn't exist.
+
+    Call before fetching posts, so a typo fails fast. ``build()`` also calls it.
+    """
+    for field, option in CONTENT_FILE_OPTIONS.items():
+        path = getattr(spec, field)
+        if path and not Path(path).is_file():
+            raise MissingContentFile(f"{option}: file not found: {path}")
 
 
 def _remove_image(img) -> None:
@@ -110,13 +153,28 @@ def _article_header(post: Post, feature_figure: str) -> str:
     parts = ["<header>"]
     if date := _format_date(post.published_at):
         parts.append(f'<p class="date">{date}</p>')
-    parts.append(f"<h1>{html.escape(post.title)}</h1>")
+    parts.append(f"<h2>{html.escape(post.title)}</h2>")
     if byline := _byline(post.authors):
         parts.append(f'<p class="byline">{byline}</p>')
     if feature_figure:
         parts.append(feature_figure)
     parts.append("</header>")
     return "\n".join(parts)
+
+
+def _title_page(spec: BookSpec) -> str:
+    parts = ['<section epub:type="titlepage">', f"<h1>{html.escape(spec.title)}</h1>"]
+    if spec.author:
+        parts.append(f'<p class="author">{html.escape(spec.author)}</p>')
+    if spec.publisher:
+        parts.append(f'<p class="publisher">{html.escape(spec.publisher)}</p>')
+    parts.append("</section>")
+    return "\n".join(parts)
+
+
+def _half_title_page(spec: BookSpec) -> str:
+    return (f'<section epub:type="halftitlepage">\n'
+            f'<p class="title">{html.escape(spec.title)}</p>\n</section>')
 
 
 def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
@@ -153,6 +211,7 @@ def build(
     Images that can't be fetched as valid images are left out of the book and
     reported in BuildResult.problems; they never fail the build.
     """
+    check_content_files(spec)
     session = session or requests.Session()
 
     book = epub.EpubBook()
@@ -173,13 +232,17 @@ def build(
     css = epub.EpubItem(uid="style", file_name="style/style.css", media_type="text/css", content=CSS)
     book.add_item(css)
 
-    pages = []
+    front: list[epub.EpubHtml] = []      # reading order before the contents page
+    after_toc: list[epub.EpubHtml] = []  # foreword, intro: after the contents page
+    chapters: list[epub.EpubHtml] = []
+    contents_labels: dict[str, str] = {}  # chapter file name -> processor's contents label
+    back: list[epub.EpubHtml] = []
     image_items: dict[str, epub.EpubItem] = {}
     image_sizes: dict[str, tuple[int, int] | None] = {}
     failed_images: dict[str, str] = {}  # src -> reason
     problems: list[BuildProblem] = []
 
-    # ---- Cover ----
+    # ---- Cover (metadata only: no cover page, see #6) ----
     if spec.cover:
         cover_path = Path(spec.cover)
         cover_bytes = cover_path.read_bytes()
@@ -196,45 +259,34 @@ def build(
             if cover_ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"):
                 cover_ext = ".jpg"
 
-        cover_fname = f"cover{cover_ext}"
         cover_item = epub.EpubItem(
             uid="cover-image",
-            file_name=f"images/{cover_fname}",
+            file_name=f"images/cover{cover_ext}",
             media_type=media_type_for_ext(cover_ext),
             content=cover_bytes,
         )
         cover_item.properties = {"cover-image"}
         book.add_item(cover_item)
-
         book.add_metadata(None, "meta", "", {"name": "cover", "content": "cover-image"})
 
-        cover_page = _add_page(
-            book, css, "Cover", "cover.xhtml",
-            f'<div class="cover"><img src="images/{cover_fname}" alt="Cover"/></div>',
-            spec.lang,
-        )
-        cover_page.id = "cover"
-        pages.append(cover_page)
-
-        # <reference> belongs in the OPF <guide>, not <metadata> (epubcheck RSC-005).
-        book.guide.append({"type": "cover", "title": "Cover", "href": "cover.xhtml"})
-
     # ---- Front matter ----
-    for file_attr, page_title, file_name, placeholder in [
+    title_page = _add_page(book, css, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang)
+    for file_attr, page_title, file_name, placeholder, bucket in [
         (spec.copyright_file, "Copyright", "copyright.xhtml",
-         "[Copyright placeholder — replace with publication copyright notice.]"),
+         "[Copyright placeholder — replace with publication copyright notice.]", front),
         (spec.imprint_file, "Imprint", "imprint.xhtml",
-         "[Imprint placeholder — publisher, edition, printing history, etc.]"),
+         "[Imprint placeholder — publisher, edition, printing history, etc.]", front),
         (spec.foreword_file, "Foreword", "foreword.xhtml",
-         "[Foreword placeholder — introductory remarks by a guest writer.]"),
+         "[Foreword placeholder — introductory remarks by a guest writer.]", after_toc),
     ]:
-        html = _load_or_placeholder(file_attr, page_title, placeholder)
-        pages.append(_add_page(book, css, page_title, file_name, html, spec.lang))
+        content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
+        if content is not None:
+            bucket.append(_add_page(book, css, page_title, file_name, content, spec.lang))
 
     if spec.intro_file:
         intro_text = Path(spec.intro_file).read_text(encoding="utf-8").strip()
         if intro_text:
-            pages.append(_add_page(
+            after_toc.append(_add_page(
                 book, css, "Introduction", "intro.xhtml",
                 wrap_text_as_html("Introduction", intro_text),
                 spec.lang,
@@ -246,7 +298,7 @@ def build(
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
         processor.clean(soup, post)
-        display_title = processor.display_title(post)
+        contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
         for img in soup.find_all("img"):
             src = img.get("src", "")
@@ -305,8 +357,8 @@ def build(
             del feature[FEATURE_MARK]
             feature_html = str(feature.extract())
         body_content = soup.body.decode_contents() if soup.body else str(soup)
-        pages.append(_add_page(
-            book, css, display_title, f"{chapter_slug}.xhtml",
+        chapters.append(_add_page(
+            book, css, post.title, f"{chapter_slug}.xhtml",
             f'<article id="article-{chapter_number}">\n'
             f"{_article_header(post, feature_html)}\n{body_content}\n</article>",
             spec.lang,
@@ -321,20 +373,32 @@ def build(
         (spec.about_file, "About This Book", "about.xhtml",
          "[About this publication placeholder — production credits, source, rights, etc.]"),
     ]:
-        html = _load_or_placeholder(file_attr, page_title, placeholder)
-        pages.append(_add_page(book, css, page_title, file_name, html, spec.lang))
+        content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
+        if content is not None:
+            back.append(_add_page(book, css, page_title, file_name, content, spec.lang))
 
-    # ---- Finalize ----
-    book.toc = tuple(pages)
+    # ---- Half-title page: divides real front matter from the chapters ----
+    half_title = []
+    if front or after_toc:
+        half_title = [_add_page(book, css, spec.title, "halftitlepage.xhtml", _half_title_page(spec), spec.lang)]
+
+    # ---- Navigation and reading order ----
+    # Reading order: title page, copyright, imprint, contents, foreword, intro,
+    # half-title, chapters, back matter. The contents page starts at the foreword:
+    # it leaves out the pages before it (title page, copyright, imprint), the
+    # half-title page and itself.
+    chapter_links = [epub.Link(page.file_name, contents_labels[page.file_name], page.id) for page in chapters]
+    book.toc = tuple(after_toc + chapter_links + back)
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
+    book.spine = [title_page, *front, "nav", *after_toc, *half_title, *chapters, *back]
 
-    if spec.cover:
-        cover_page = next(p for p in pages if p.id == "cover")
-        rest = [p for p in pages if p.id != "cover"]
-        book.spine = [cover_page, "nav"] + rest
-    else:
-        book.spine = ["nav"] + pages
+    book.guide.append({"type": "title-page", "title": "Title Page", "href": title_page.file_name})
+    book.guide.append({"type": "toc", "title": "Contents", "href": "nav.xhtml"})
+    if chapters:
+        book.guide.append({"type": "text", "title": "Start", "href": chapters[0].file_name})
 
-    epub.write_epub(spec.output, book)
+    writer = _Writer(spec.output, book, {})
+    writer.process()
+    writer.write()
     return BuildResult(path=spec.output, problems=problems)

@@ -27,3 +27,8 @@ def test_book_where_every_image_failed_is_valid(build_book):
                           U + "b.png": [FakeResponse(404)], U + "f.png": [ok(b"<html/>", "text/html")]})
     assert len(book.result.problems) == 3
     assert_valid_epub(book.path)
+
+
+def test_no_placeholders_book_without_cover_is_valid(build_book):
+    book = build_book([post(slug="one", title="One"), post(slug="two", title="Two")], placeholders=False)
+    assert_valid_epub(book.path)

@@ -46,22 +46,22 @@ def test_header_structure_and_order(build_book):
     assert re.search(r'<article id="article-1">\s*<header>', body)
     assert re.search(r"</article>\s*</body>\s*</html>\s*$", body)  # article wraps everything
     header = re.search(r"<header>.*?</header>", body, re.S).group(0)
-    order = re.findall(r'class="date"|<h1>|class="byline"|<figure>', header)
-    assert order == ['class="date"', "<h1>", 'class="byline"', "<figure>"]
+    order = re.findall(r'class="date"|<h2>|class="byline"|<figure>', header)
+    assert order == ['class="date"', "<h2>", 'class="byline"', "<figure>"]
     assert '<p class="date">24 Aug 2026</p>' in header
     assert "data-feature-image" not in chapter
 
 
 def test_title_is_escaped_and_nav_uses_plain_title(build_book):
     book = build_book(post(title='Cats & <Dogs> "q"'))
-    assert '<h1>Cats &amp; &lt;Dogs&gt; "q"</h1>' in book.chapter()
+    assert '<h2>Cats &amp; &lt;Dogs&gt; "q"</h2>' in book.chapter()
     nav = book.text("nav.xhtml")
     assert "Cats &amp; &lt;Dogs&gt;" in nav and " — " not in nav
 
 
 def test_bare_post_header_is_just_the_title(build_book):
     header = re.search(r"<header>.*?</header>", build_book(post(title="Bare")).chapter(), re.S).group(0)
-    assert re.sub(r"\s", "", header) == "<header><h1>Bare</h1></header>"
+    assert re.sub(r"\s", "", header) == "<header><h2>Bare</h2></header>"
 
 
 def test_chapters_are_numbered(build_book):

@@ -19,7 +19,7 @@ The fixed sequence of pages a reader moves through: title page, copyright, impri
 _Avoid_: Spine (the EPUB file format's name for it)
 
 **Contents page**:
-The in-book page listing the front matter, chapters and back matter, excluding the title page, half-title page and itself.
+The in-book page (also the reading app's contents menu) listing the book from the foreword onward: foreword, introduction, chapters and back matter. Each chapter's entry is its title, optionally with its authors, depending on the site.
 _Avoid_: TOC page, nav
 
 **Front matter**:

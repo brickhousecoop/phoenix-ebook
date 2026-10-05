@@ -61,7 +61,11 @@ class HtmlProcessor:
     name: str = "generic"
 
     def display_title(self, post: Post) -> str:
-        """The chapter's title in the table of contents and the page ``<title>``."""
+        """The chapter's label on the contents page and in the app's contents menu.
+
+        Defaults to the plain post title. Override to add e.g. the author. The
+        chapter's own heading and page ``<title>`` always use the plain title.
+        """
         return post.title
 
     def clean(self, soup: BeautifulSoup, post: Post) -> None:

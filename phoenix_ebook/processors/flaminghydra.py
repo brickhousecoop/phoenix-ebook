@@ -11,6 +11,14 @@ from phoenix_ebook.processors.base import HtmlProcessor, register_processor
 class FlamingHydraProcessor(HtmlProcessor):
     name = "flaminghydra"
 
+    def display_title(self, post: Post) -> str:
+        """Collections mix many writers, so the contents show who wrote each piece."""
+        names = [a.name for a in post.authors]
+        if not names:
+            return post.title
+        joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        return f"{post.title} — {joined}"
+
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
         super().clean(soup, post)
         # Posts end with an <hr> and a line inviting readers to the site's comments

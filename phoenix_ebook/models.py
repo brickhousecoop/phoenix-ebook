@@ -65,6 +65,7 @@ class BookSpec:
     notes_file: str | None = None
     acknowledgements_file: str | None = None
     about_file: str | None = None
+    placeholders: bool = True  # placeholder pages for front/back-matter sections without a file
 
     optimize_images: bool = True
     image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing

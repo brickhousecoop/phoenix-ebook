@@ -112,21 +112,29 @@ quality = 85
 
 ### Book structure
 
-| Section | Option | If omitted |
+Pages appear in this order:
+
+| Page | Option | If omitted |
 |---|---|---|
-| Cover | `--cover` | no cover |
+| Title page | — (from `--title`, `--author`, `--publisher`) | always generated |
 | Copyright | `--copyright-file` | placeholder page |
 | Imprint | `--imprint-file` | placeholder page |
+| Contents | — | always generated |
 | Foreword | `--foreword-file` | placeholder page |
-| Introduction | `--intro-file` | skipped |
-| *Posts, in the order given* | | |
+| Introduction | `--intro-file` | left out |
+| Half-title page (the title alone, as a divider) | — | left out if the book has no copyright, imprint, foreword or introduction |
+| *Chapters: one per post, in the order given* | | |
 | Notes | `--notes-file` | placeholder page |
 | Acknowledgements | `--acknowledgements-file` | placeholder page |
 | About This Book | `--about-file` | placeholder page |
 
-Each chapter opens with a header: the post's publication date (in the site's timezone), its title, a "By …" byline linking to each author's page, and the post's feature image with its caption. The table of contents lists plain post titles.
+Placeholder pages hold bracketed stand-in text so you can see where a section goes. For a finished book, pass `--no-placeholders` (manifest: `placeholders = false` under `[content]`) and sections without a file are left out instead.
 
-Content files are HTML fragments, inserted as-is (include your own `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
+The cover (`--cover`) is the book's cover image in reading apps and libraries; it isn't repeated as a page inside the book, which some stores (notably Kindle) warn against. If a content file or the cover doesn't exist, the build stops with an error naming the option, before fetching anything.
+
+Each chapter opens with a header: the post's publication date (in the site's timezone), its title, a "By …" byline linking to each author's page, and the post's feature image with its caption. The contents page lists each chapter by its title; a site's processor can add more (Flaming Hydra books show "Title — Author").
+
+Content files are HTML fragments, inserted as-is; start them with an `<h2>` heading (the title page holds the book's `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
 ### Images
 
