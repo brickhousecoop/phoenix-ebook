@@ -111,3 +111,10 @@ def test_visible_text_otherwise_unchanged(build_book):
 
 def test_full_book_with_roles_and_glue_is_valid(full_book):
     assert_valid_epub(full_book.path)
+
+
+def test_no_page_list(full_book):
+    """Regression (#9): chapters' epub:type + id made ebooklib emit a bogus page list."""
+    nav = full_book.text("nav.xhtml")
+    assert 'epub:type="page-list"' not in nav and "pagebreak" not in nav
+    assert "pageList" not in full_book.text("toc.ncx")

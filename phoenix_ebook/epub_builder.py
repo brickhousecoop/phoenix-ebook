@@ -618,7 +618,10 @@ def build(
     if chapters:
         book.guide.append({"type": "text", "title": "Start", "href": chapters[0].file_name})
 
-    writer = _Writer(spec.output, book, {})
+    # No page list: our books have no print page numbers, and ebooklib would treat
+    # every element with both epub:type and id (e.g. each chapter's <article>) as
+    # a page break, producing a bogus "page list" that reading apps show.
+    writer = _Writer(spec.output, book, {"epub3_pages": False})
     writer.process()
     writer.write()
     return BuildResult(path=spec.output, problems=problems)

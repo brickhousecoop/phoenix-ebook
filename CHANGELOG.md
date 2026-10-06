@@ -19,6 +19,7 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 - **The Python package is now `phoenix_ebook`** (was `phoenix`), since phoenix-ebook is one module of the larger Phoenix project. Secret storage names are unchanged and shared with other Phoenix modules.
 
 ### Fixed
+- **Bogus page list** (regression from #9): every chapter was listed as a printed "page" (labelled "article-2", "article-3", …), which Thorium uses for page numbers and "go to page". Books no longer include a page list (they have no print page numbers). Found by DAISY Ace.
 - **A content-file path that doesn't exist** (e.g. a typo in `--foreword-file`) now stops the build with a clear error before anything is fetched; it used to produce a placeholder page silently (or crash, for the cover and intro).
 - **Images that can't be downloaded** (#1) are left out and listed as warnings after the build, instead of leaving a remote link in the book (which made the EPUB invalid). HTTP error pages are no longer embedded as images. Temporary failures are retried once.
 - **Cover reference** was placed in the wrong part of the package file, which failed epubcheck; books now validate cleanly.
