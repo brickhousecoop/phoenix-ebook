@@ -12,6 +12,8 @@ class FlamingHydraProcessor(HtmlProcessor):
     """Flaming Hydra: drops the comments footer, and labels contents entries "Title — Author"."""
 
     name = "flaminghydra"
+    platform = "ghost"
+    sites = ("flaminghydra",)  # flaminghydra.ghost.io and flaminghydra.com
 
     def display_title(self, post: Post) -> str:
         """Collections mix many writers, so the contents show who wrote each piece."""

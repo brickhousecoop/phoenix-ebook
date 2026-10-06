@@ -8,6 +8,18 @@ Builds EPUB books from posts published on blogging and newsletter platforms. Thi
 A single published piece on the source platform (e.g. a Ghost post), with its title, authors, date, body and feature image.
 _Avoid_: Article, entry, story
 
+**Canonical chapter HTML**:
+The single HTML form every platform converts its posts into before anything else touches them (see ADR 0001). Defines how shared features such as notes and figures are written, independent of the platform's own dialect.
+_Avoid_: Clean HTML, normalized HTML (as a loose description)
+
+**Platform**:
+A publishing service posts come from (Ghost, later Substack), with its own API and HTML dialect.
+_Avoid_: Source (that's the platform plus a site URL), CMS
+
+**Site processor**:
+Per-site adjustments applied on top of a platform's canonical HTML (e.g. dropping one site's comments footer).
+_Avoid_: Plugin, filter
+
 ## Credits
 
 **Editor**:

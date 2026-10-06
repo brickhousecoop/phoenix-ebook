@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 import requests
 
+from phoenix_ebook.alt_text import normalize_image_url
 from phoenix_ebook.errors import InvalidBookSpec
 from phoenix_ebook.models import Post
 
@@ -19,6 +20,22 @@ class Platform(ABC):
     """
 
     name: str
+    default_processor: str = "generic"  # used when no site processor matches the URL
+
+    def normalize_html(self, html: str) -> str:
+        """Convert this platform's HTML dialect to canonical chapter HTML (ADR 0001).
+
+        Called by ``fetch_post`` on the post body and the feature-image caption, so
+        everything downstream sees one form. Default: unchanged.
+        """
+        return html
+
+    def canonical_image_url(self, url: str) -> str:
+        """The URL that identifies an image regardless of size variants or cache-busting.
+
+        Used to match alt-text overrides. Default: drop the query string and fragment.
+        """
+        return normalize_image_url(url)
 
     @abstractmethod
     def fetch_post(self, session: requests.Session, url: str, secret: str, slug: str) -> Post:
@@ -32,6 +49,9 @@ class Platform(ABC):
         - ``authors``: ``Author(name, url)``, with ``url`` the author's profile page
         - ``published_at``: ISO 8601 in the *site's* timezone, so dates match the site
         - ``feature_image`` / ``feature_image_alt`` / ``feature_image_caption`` (HTML)
+
+        ``html`` and ``feature_image_caption`` must be canonical chapter HTML: pass
+        them through ``normalize_html``.
 
         On failure raise the typed errors from ``phoenix_ebook.errors``, never raw
         ``requests`` exceptions: ``AuthError`` (credential rejected or malformed),

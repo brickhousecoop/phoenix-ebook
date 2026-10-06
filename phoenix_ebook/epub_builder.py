@@ -22,6 +22,7 @@ from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
 from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
+from phoenix_ebook.platforms.base import Platform
 from phoenix_ebook.processors.base import HtmlProcessor
 
 
@@ -461,7 +462,7 @@ def _accessibility_summary(tally: Counter) -> str:
 
 
 def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: dict[str, str],
-                    used: set[str], problems: list[BuildProblem], tally: Counter) -> None:
+                    used: set[str], problems: list[BuildProblem], tally: Counter, canonical_url) -> None:
     """Apply alt-text overrides and report missing or suspicious alt text.
 
     Runs after image handling, so failed images are gone and ``src`` is the
@@ -470,7 +471,7 @@ def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: d
     images = soup.find_all("img")
     for position, img in enumerate(images, start=1):
         url = local_to_url.get(img.get("src", ""), img.get("src", ""))
-        key = normalize_image_url(url)
+        key = canonical_url(url)
         figure = img.find_parent("figure")
         caption_tag = figure.find("figcaption") if figure else None
         caption = caption_tag.get_text(" ", strip=True) if caption_tag else None
@@ -521,11 +522,14 @@ def build(
     *,
     session: requests.Session | None = None,
     image_base_url: str = "",
+    platform: "Platform | None" = None,
 ) -> BuildResult:
     """Assemble an EPUB from already-fetched posts.
 
     Images that can't be fetched as valid images are left out of the book and
-    reported in BuildResult.problems; they never fail the build.
+    reported in BuildResult.problems; they never fail the build. ``platform``
+    supplies platform-specific image-URL rules (e.g. Ghost's size variants) for
+    matching alt-text overrides; without it the generic rule is used.
     """
     validate_spec(spec)
     posts = list(posts)
@@ -554,7 +558,8 @@ def build(
     image_sizes: dict[str, tuple[int, int] | None] = {}
     failed_images: dict[str, str] = {}  # src -> reason
     local_to_url: dict[str, str] = {}  # embedded image path -> original URL
-    alt_overrides = {normalize_image_url(url): alt for url, alt in spec.alt_text.items()}
+    canonical_url = platform.canonical_image_url if platform is not None else normalize_image_url
+    alt_overrides = {canonical_url(url): alt for url, alt in spec.alt_text.items()}
     used_overrides: set[str] = set()
     image_tally: Counter = Counter()  # images / described / decorative / missing, for accessibility metadata
     has_animation = False
@@ -673,7 +678,7 @@ def build(
             img.attrs.pop("srcset", None)
             img.attrs.pop("sizes", None)
 
-        _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems, image_tally)
+        _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems, image_tally, canonical_url)
         _glue_soup(soup)
 
         feature = soup.find("figure", attrs={FEATURE_MARK: True})
@@ -707,7 +712,7 @@ def build(
             back.append(_add_page(book, styles, page_title, file_name, content, spec.lang, part="backmatter"))
 
     for url, _ in spec.alt_text.items():
-        if normalize_image_url(url) not in used_overrides:
+        if canonical_url(url) not in used_overrides:
             problems.append(BuildProblem(kind="alt-override-unused", post_slug=None, url=url,
                                          detail="no image in the book has this URL"))
 

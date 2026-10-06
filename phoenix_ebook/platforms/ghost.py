@@ -5,12 +5,14 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 from datetime import datetime
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
+from bs4 import BeautifulSoup
 
 from phoenix_ebook.errors import AuthError, PostNotFound, SourceUnreachable, explain_response
 from phoenix_ebook.models import Author, Post
@@ -48,6 +50,25 @@ class GhostPlatform(Platform):
     """
 
     name = "ghost"
+    default_processor = "generic"
+
+    def normalize_html(self, html: str) -> str:
+        """Ghost's dialect -> canonical chapter HTML: drop editor ``kg-*`` card classes."""
+        if "kg-" not in html:
+            return html
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup.find_all(class_=True):
+            classes = [c for c in tag.get("class", []) if not c.startswith("kg-")]
+            if classes:
+                tag["class"] = classes
+            else:
+                del tag["class"]
+        return str(soup)
+
+    def canonical_image_url(self, url: str) -> str:
+        """Also ignore Ghost's resized variants: '…/content/images/size/w1000/2026/a.png' -> '…/content/images/2026/a.png'."""
+        canonical = super().canonical_image_url(url)
+        return re.sub(r"/size/w\d+(?:h\d+)?/", "/", canonical, count=1)
 
     def __init__(self) -> None:
         self._timezones: dict[str, ZoneInfo | None] = {}  # site url -> timezone
@@ -86,12 +107,12 @@ class GhostPlatform(Platform):
         return Post(
             slug=post.get("slug") or slug,
             title=post.get("title") or slug,
-            html=post.get("html") or "",
+            html=self.normalize_html(post.get("html") or ""),
             authors=authors,
             published_at=self._localize(session, url, post.get("published_at")),
             feature_image=post.get("feature_image") or None,
             feature_image_alt=post.get("feature_image_alt") or None,
-            feature_image_caption=post.get("feature_image_caption") or None,
+            feature_image_caption=self.normalize_html(post.get("feature_image_caption") or "") or None,
             raw=post,
         )
 

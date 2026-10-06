@@ -16,7 +16,11 @@ def _meaningful_children(tag) -> list:
 
 
 def _strip_web_markup(soup: BeautifulSoup) -> None:
-    """Remove Ghost editor / web-only markup that means nothing in an ebook."""
+    """Remove web-only markup that means nothing in an ebook, whatever the platform.
+
+    Platform-specific dialects (e.g. Ghost's ``kg-*`` classes) are handled by the
+    platform's ``normalize_html`` before this runs (ADR 0001).
+    """
     for comment in soup.find_all(string=lambda s: isinstance(s, Comment)):
         comment.extract()
 
@@ -25,11 +29,8 @@ def _strip_web_markup(soup: BeautifulSoup) -> None:
         if tag.name == "img":
             tag.attrs.pop("loading", None)
             tag.attrs.pop("decoding", None)
-        classes = [c for c in tag.get("class", []) if not c.startswith("kg-")]
-        if classes:
-            tag["class"] = classes
-        else:
-            tag.attrs.pop("class", None)
+        if "class" in tag.attrs and not tag["class"]:
+            del tag["class"]
 
     # <br> as the first or last thing in a block is just editor spacing.
     for block in soup.find_all(_BR_TRIM_BLOCKS):
@@ -37,7 +38,7 @@ def _strip_web_markup(soup: BeautifulSoup) -> None:
             while (kids := _meaningful_children(block)) and kids[end].name == "br":
                 kids[end].decompose()
 
-    # Ghost captions nest emphasis: <b><strong>x</strong></b> -> <strong>x</strong>.
+    # Editors often nest emphasis: <b><strong>x</strong></b> -> <strong>x</strong>.
     for tag in soup.find_all(_BOLD):
         if tag.parent is None:  # already unwrapped into its parent
             continue
@@ -52,14 +53,18 @@ def _strip_web_markup(soup: BeautifulSoup) -> None:
 
 
 class HtmlProcessor:
-    """Cleans a post's HTML for the book. Subclass it for site-specific quirks.
+    """Adjusts a post's canonical HTML for the book. Subclass it for one site's quirks.
 
-    Set ``name`` (the ``--processor`` value), decorate with ``@register_processor``
-    and import the module in ``processors/__init__.py``. A processor is picked from
-    the site URL unless ``--processor`` is given.
+    Set ``name`` (the ``--processor`` value), ``platform`` and ``sites`` (substrings
+    of the site's domain this processor handles), decorate with
+    ``@register_processor`` and import the module in ``processors/__init__.py``.
+    Platform dialects are not handled here but in ``Platform.normalize_html``
+    (ADR 0001); see ``select_processor`` for how one is chosen.
     """
 
     name: str = "generic"
+    platform: str | None = None  # the platform whose sites this handles; None = generic
+    sites: tuple[str, ...] = ()  # domain substrings, e.g. ("flaminghydra",)
 
     def display_title(self, post: Post) -> str:
         """The chapter's label on the contents page and in the app's contents menu.
@@ -72,9 +77,9 @@ class HtmlProcessor:
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
         """Modify ``soup`` (the post body, plus its feature image figure) in place.
 
-        Runs before images are fetched. Overrides must call ``super().clean()``
-        first: this base implementation removes scripts/iframes/styles and all
-        web-only editor markup (``kg-*`` classes, inline styles, comments, …).
+        Receives canonical chapter HTML. Runs before images are fetched. Overrides
+        must call ``super().clean()`` first: this base implementation removes
+        scripts/iframes/styles and web-only markup (inline styles, comments, …).
         """
         for tag in soup.find_all(["script", "iframe", "style"]):
             tag.decompose()
@@ -105,3 +110,12 @@ def get_processor(name: str) -> HtmlProcessor:
 
 
 register_processor(GenericProcessor)
+
+
+def select_processor(platform: str, domain: str, default: str) -> str:
+    """Name of the processor for a site: the first one registered for ``platform``
+    whose ``sites`` match ``domain``, else ``default`` (the platform's default)."""
+    for name, cls in _REGISTRY.items():
+        if cls.platform == platform and any(site in domain for site in cls.sites):
+            return name
+    return default

@@ -16,11 +16,10 @@ def clean(html: str, processor: str = "generic") -> str:
 
 
 @pytest.mark.parametrize("html, expected", [
-    # kg- classes, loading/decoding; width/height kept
-    ('<figure class="kg-card kg-image-card kg-card-hascaption"><img class="kg-image" loading="lazy" '
-     'decoding="async" src="a.jpg" width="10" height="5" alt="x"/></figure>',
-     '<figure><img alt="x" height="5" src="a.jpg" width="10"/></figure>'),
-    ('<p class="kg-x keep">t</p>', '<p class="keep">t</p>'),
+    # loading/decoding removed; width/height kept (Ghost's kg-* classes: see test_platforms.py)
+    ('<figure><img class="photo" loading="lazy" decoding="async" src="a.jpg" width="10" height="5" alt="x"/></figure>',
+     '<figure><img alt="x" class="photo" height="5" src="a.jpg" width="10"/></figure>'),
+    ('<p class="">t</p>', '<p>t</p>'),
     # inline styles and comments
     ('<p style="color:red">a<!--members-only-->b</p>', "<p>ab</p>"),
     # leading / trailing <br> in blocks
@@ -55,3 +54,7 @@ def test_scripts_iframes_and_styles_removed():
 
 def test_site_processor_inherits_cleanup():
     assert clean('<p style="x">a<!--c--></p>', "flaminghydra") == "<p>a</p>"
+
+
+def test_generic_cleanup_leaves_other_platforms_classes_alone():
+    assert clean('<p class="kg-x keep">t</p>') == '<p class="kg-x keep">t</p>'  # kg-* is Ghost's, handled there

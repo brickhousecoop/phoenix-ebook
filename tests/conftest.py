@@ -127,13 +127,14 @@ def build_book(tmp_path):
     """build_book(posts_or_post, routes, **spec_fields) -> Built"""
     counter = iter(range(10_000))
 
-    def _build(posts, routes=None, *, session=None, processor="generic", image_base_url="", **spec_fields):
+    def _build(posts, routes=None, *, session=None, processor="generic", image_base_url="", platform=None, **spec_fields):
         if isinstance(posts, Post):
             posts = [posts]
         out = tmp_path / f"book{next(counter)}.epub"
         session = session or FakeSession(routes)
         spec = BookSpec(title=spec_fields.pop("title", "t"), output=str(out), **spec_fields)
-        result = build(spec, posts, get_processor(processor), session=session, image_base_url=image_base_url)
+        result = build(spec, posts, get_processor(processor), session=session, image_base_url=image_base_url,
+                       platform=platform)
         built = Built(result, out)
         built.session = session
         return built

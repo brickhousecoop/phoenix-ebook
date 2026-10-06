@@ -6,7 +6,7 @@ import re
 import pytest
 
 import build_epub
-from conftest import assert_valid_epub, post
+from conftest import FakeSession, assert_valid_epub, post
 from phoenix_ebook.epub_builder import InvalidBookSpec, sort_name
 from phoenix_ebook.models import Author
 
@@ -196,11 +196,11 @@ def test_manifest_author_and_editor_conflict(tmp_path, captured_spec):
 
 
 def test_cli_series_number_without_series_exits_before_fetching(monkeypatch, tmp_path):
-    fetched = []
-    monkeypatch.setattr(build_epub, "get_platform", lambda name: fetched.append(name))
+    session = FakeSession()  # any HTTP request would show up in session.log
+    monkeypatch.setattr(build_epub.requests, "Session", lambda: session)
     with pytest.raises(SystemExit) as exit_info:
         build_epub.main(["--series-number", "3", "--admin-key", "k:00", "--output", str(tmp_path / "b.epub"), "s"])
-    assert "series" in str(exit_info.value.code) and not fetched
+    assert "series" in str(exit_info.value.code) and not session.log
 
 
 @pytest.fixture

@@ -13,13 +13,13 @@ _FILE_NAME_PATTERNS = [
 
 
 def normalize_image_url(url: str) -> str:
-    """The key overrides are matched on: no query or fragment, no Ghost /size/w<N>/ segment.
+    """The generic override key: the URL without query string or fragment.
 
-    'https://x/content/images/size/w1000/2026/08/a.png?v=2' -> 'https://x/content/images/2026/08/a.png'
+    Platforms add their own rules on top (``Platform.canonical_image_url``), e.g.
+    Ghost's size variants.
     """
     parts = urlsplit(url)
-    path = re.sub(r"/size/w\d+(?:h\d+)?/", "/", parts.path)
-    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
 def _normalized(text: str) -> str:

@@ -7,6 +7,7 @@ import build_epub
 from conftest import assert_valid_epub, ok, png, post
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.models import BuildProblem
+from phoenix_ebook.platforms.ghost import GhostPlatform
 
 U = "https://img.test/"
 
@@ -91,13 +92,14 @@ def test_url_matching_ignores_size_variants_query_and_relative_src(build_book):
             f'<img src="{site}/content/images/size/w600h400/2026/08/a.png"/>')
     book = build_book(post(html), {f"{site}/content/images/size/w1000/2026/08/a.png?v=2": [ok(png())],
                                    f"{site}/content/images/size/w600h400/2026/08/a.png": [ok(png())]},
-                      image_base_url=site, alt_text={full: "One entry, every variant."})
+                      image_base_url=site, alt_text={full: "One entry, every variant."}, platform=GhostPlatform())
     assert book.chapter().count('alt="One entry, every variant."') == 2 and not alt_problems(book)
 
 
-def test_normalize_image_url():
-    assert normalize_image_url("https://x/content/images/size/w1000/2026/a.png?v=2#f") == "https://x/content/images/2026/a.png"
-    assert normalize_image_url("https://x/a.png") == "https://x/a.png"
+def test_normalize_image_url_generic_rule():
+    assert normalize_image_url("https://x/a.png?v=2#f") == "https://x/a.png"
+    # size variants are a Ghost rule (GhostPlatform.canonical_image_url), not generic
+    assert normalize_image_url("https://x/content/images/size/w1000/a.png") == "https://x/content/images/size/w1000/a.png"
 
 
 def test_feature_image_override(build_book):

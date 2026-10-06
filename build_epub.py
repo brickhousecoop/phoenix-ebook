@@ -22,15 +22,13 @@ from phoenix_ebook.errors import InvalidBookSpec, ManifestError, PhoenixError, P
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
-from phoenix_ebook.processors.base import get_processor
+from phoenix_ebook.processors.base import get_processor, select_processor
 from phoenix_ebook.secrets import SecretStore, extract_domain
 
 
-def _default_processor_for(url: str) -> str:
-    domain = extract_domain(url)
-    if "flaminghydra" in domain:
-        return "flaminghydra"
-    return "generic"
+def _default_processor_for(platform: str, url: str) -> str:
+    """The site processor registered for this platform and site, else the platform's default."""
+    return select_processor(platform, extract_domain(url), get_platform(platform).default_processor)
 
 
 def _one_editor(editor: str | None, author: str | None, names: str) -> str | None:
@@ -44,7 +42,7 @@ def _spec_from_args(args) -> BookSpec:
     source = SourceSpec(
         platform=args.platform,
         url=args.url,
-        processor=args.processor or _default_processor_for(args.url),
+        processor=args.processor or _default_processor_for(args.platform, args.url),
         slugs=list(args.slugs),
     )
     return BookSpec(
@@ -103,7 +101,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
     source = SourceSpec(
         platform=source_data["platform"],
         url=source_data["url"],
-        processor=source_data.get("processor") or _default_processor_for(source_data["url"]),
+        processor=source_data.get("processor") or _default_processor_for(source_data["platform"], source_data["url"]),
         slugs=list(slugs),
     )
     return BookSpec(
@@ -161,7 +159,7 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     if missing:
         raise PostNotFound(site, missing)
 
-    result = build(spec, posts, processor, session=session, image_base_url=spec.source.url)
+    result = build(spec, posts, processor, session=session, image_base_url=spec.source.url, platform=platform)
     print(f"wrote {result.path}")
     _report_problems(result.problems)
 

@@ -6,7 +6,7 @@ import re
 import pytest
 
 import build_epub
-from conftest import jpeg, post
+from conftest import FakeSession, jpeg, post
 from phoenix_ebook.epub_builder import MissingContentFile
 
 
@@ -151,11 +151,11 @@ def test_missing_content_file_raises_before_building(build_book, tmp_path, field
 
 @pytest.mark.parametrize("flag", ["--foreword-file", "--cover"])
 def test_cli_missing_file_exits_with_message_before_fetching(monkeypatch, tmp_path, capsys, flag):
-    fetched = []
-    monkeypatch.setattr(build_epub, "get_platform", lambda name: fetched.append(name))
+    session = FakeSession()  # any HTTP request would show up in session.log
+    monkeypatch.setattr(build_epub.requests, "Session", lambda: session)
     out = tmp_path / "book.epub"
     with pytest.raises(SystemExit) as exit_info:
         build_epub.main([flag, "does-not-exist.html", "--admin-key", "k:00", "--output", str(out), "slug"])
     assert exit_info.value.code not in (0, None)
     assert flag in str(exit_info.value.code) and "does-not-exist.html" in str(exit_info.value.code)
-    assert not fetched and not out.exists()
+    assert not session.log and not out.exists()

@@ -222,9 +222,11 @@ phoenix_ebook/
 └── styles/              # core.css (Standard Ebooks, unmodified) + phoenix.css
 ```
 
-**New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name`, decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, authors as `Author(name, url)`, `published_at` in the site's own timezone, and the feature image fields if the platform has them. The docstring on `Platform.fetch_post` has the full contract.
+Each platform converts its own HTML dialect into one **canonical chapter HTML**; everything after that (site processors, the builder, images, alt text, styles) only sees the canonical form. Platform quirks belong in the platform, site quirks in a site processor. See [ADR 0001](docs/adr/0001-platforms-normalize-to-canonical-html.md).
 
-**New site processor.** Subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. Overrides of `clean()` **must call `super().clean()` first**; that is where all the shared cleanup happens. See `flaminghydra.py` for an example.
+**New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name` (and `default_processor` if not `"generic"`), decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, run through your `normalize_html()` so it's canonical (Ghost's, for example, drops editor `kg-*` classes); authors as `Author(name, url)`; `published_at` in the site's own timezone; and the feature image fields if the platform has them. Override `canonical_image_url()` if the platform serves size variants of the same image. The docstrings on `Platform` have the full contract, including the errors to raise.
+
+**New site processor.** Subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, `platform` and `sites` (domain substrings it handles), decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. It's chosen automatically for matching sites on that platform (or with `--processor`). Overrides of `clean()` **must call `super().clean()` first**; that's where the shared web cleanup happens. See `flaminghydra.py` for an example.
 
 ### Using it as a library
 

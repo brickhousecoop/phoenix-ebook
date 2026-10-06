@@ -7,7 +7,7 @@ import re
 import pytest
 
 import build_epub
-from conftest import REPO, post
+from conftest import FakeSession, REPO, post
 from phoenix_ebook.epub_builder import MissingContentFile
 
 STYLES = REPO / "phoenix_ebook" / "styles"
@@ -105,11 +105,11 @@ def test_missing_user_css_raises(build_book, tmp_path):
 
 
 def test_cli_missing_css_exits_before_fetching(monkeypatch, tmp_path):
-    fetched = []
-    monkeypatch.setattr(build_epub, "get_platform", lambda name: fetched.append(name))
+    session = FakeSession()  # any HTTP request would show up in session.log
+    monkeypatch.setattr(build_epub.requests, "Session", lambda: session)
     with pytest.raises(SystemExit) as exit_info:
         build_epub.main(["--css", "nope.css", "--admin-key", "k:00", "--output", str(tmp_path / "b.epub"), "slug"])
-    assert "--css" in str(exit_info.value.code) and not fetched
+    assert "--css" in str(exit_info.value.code) and not session.log
 
 
 def test_contents_page_is_headed_contents_and_unnumbered(build_book):

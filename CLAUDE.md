@@ -15,10 +15,10 @@ phoenix_ebook/
 ├── models.py                   # Post, Author, BookSpec, SourceSpec, BuildResult/BuildProblem
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
 ├── platforms/
-│   ├── base.py                 # Platform ABC + registry
+│   ├── base.py                 # Platform ABC (+ normalize_html, canonical_image_url, default_processor) + registry
 │   └── ghost.py                # GhostPlatform (JWT + Admin API)
 ├── processors/
-│   ├── base.py                 # HtmlProcessor (shared cleanup in clean()) + GenericProcessor
+│   ├── base.py                 # HtmlProcessor (generic web cleanup in clean()) + select_processor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
 ├── alt_text.py                 # alt text checks (missing/suspicious) and URL-keyed overrides
@@ -31,7 +31,7 @@ tests/                          # offline pytest suite (fixtures in conftest.py)
 scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
 ```
 
-Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself. Adding site quirks = new processor module. Don't collapse these layers back into `build_epub.py`.
+Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`). Adding site quirks = new processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.
 
 ## Setup, usage, secrets
 
