@@ -13,7 +13,7 @@ from typing import Iterable
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from ebooklib import epub
 from PIL import Image
 
@@ -51,10 +51,53 @@ def wrap_text_as_html(title: str, text: str) -> str:
     return f"<h2>{title}</h2>\n{paragraphs}"
 
 
-def _add_page(book, styles, title, file_name, content, lang):
+class _Page(epub.EpubHtml):
+    """A content page whose <body> carries an EPUB part role (frontmatter/bodymatter/backmatter).
+
+    ebooklib can't set <body> attributes, so add the role to its generated markup.
+    """
+
+    def __init__(self, *args, part: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.part = part
+
+    def get_content(self, default=None):
+        content = super().get_content(default)
+        if self.part and content:
+            content = content.replace(b"<body>", f'<body epub:type="{self.part}">'.encode(), 1)
+        return content
+
+
+# No-break glue: U+FEFF before em dashes and ellipses, so a line never starts with
+# one (what Standard Ebooks' tooling does). Not inside code, never in attributes.
+_GLUE = "\ufeff"
+_NEEDS_GLUE = re.compile("(?<![\ufeff\u2060\u00a0])([\u2014\u2026])")
+_NO_GLUE_TAGS = {"pre", "code", "kbd", "samp", "script", "style"}
+
+
+def glue(text: str) -> str:
+    """'word—word…' -> 'word\\ufeff—word\\ufeff…' (idempotent)."""
+    return _NEEDS_GLUE.sub(_GLUE + r"\1", text)
+
+
+def _glue_soup(soup) -> None:
+    for text in soup.find_all(string=True):
+        if isinstance(text, Comment) or any(p.name in _NO_GLUE_TAGS for p in text.parents):
+            continue
+        glued = glue(str(text))
+        if glued != text:
+            text.replace_with(glued)
+
+
+def _section(role: str, content: str) -> str:
+    """Wrap content (e.g. a user's content file) in a section with a specific role, unmodified."""
+    return f'<section epub:type="{role}">\n{content}\n</section>'
+
+
+def _add_page(book, styles, title, file_name, content, lang, part=None):
     if not content or not content.strip():
         content = f"<p>({title} — content placeholder)</p>"
-    page = epub.EpubHtml(title=title, file_name=file_name, lang=lang)
+    page = _Page(title=title, file_name=file_name, lang=lang, part=part)
     page.content = content
     for style in styles:
         page.add_item(style)
@@ -67,7 +110,7 @@ def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool) -
     if path:
         return Path(path).read_text(encoding="utf-8").strip()
     if use_placeholder:
-        return f"<h2>{title}</h2>\n<p>{placeholder_text}</p>"
+        return f"<h2>{title}</h2>\n<p>{glue(placeholder_text)}</p>"
     return None
 
 
@@ -82,6 +125,7 @@ class _Writer(epub.EpubWriter):
     def _get_nav(self, item):
         nav = super()._get_nav(item)
         nav = nav.replace(b'epub:type="title-page"', b'epub:type="titlepage"')
+        nav = nav.replace(b"<body>", b'<body epub:type="frontmatter">', 1)
         return nav.replace(b'<nav epub:type="landmarks">', b'<nav epub:type="landmarks" hidden="hidden">')
 
 
@@ -175,7 +219,7 @@ def _article_header(post: Post, feature_figure: str) -> str:
     parts = ["<header>"]
     if date := _format_date(post.published_at):
         parts.append(f'<p class="date">{date}</p>')
-    parts.append(f"<h2>{html.escape(post.title)}</h2>")
+    parts.append(f"<h2>{glue(html.escape(post.title))}</h2>")
     if byline := _byline(post.authors):
         parts.append(f'<p class="byline">{byline}</p>')
     if feature_figure:
@@ -287,9 +331,9 @@ def _add_metadata(book, spec: BookSpec, posts: list[Post]) -> None:
 
 
 def _title_page(spec: BookSpec) -> str:
-    parts = ['<section epub:type="titlepage">', f"<h1>{html.escape(spec.title)}</h1>"]
+    parts = ['<section epub:type="titlepage">', f"<h1>{glue(html.escape(spec.title))}</h1>"]
     if spec.subtitle:
-        parts.append(f'<p class="subtitle">{html.escape(spec.subtitle)}</p>')
+        parts.append(f'<p class="subtitle">{glue(html.escape(spec.subtitle))}</p>')
     if spec.series:
         series = spec.series + (f" · No. {spec.series_number}" if spec.series_number else "")
         series += f" · ISSN {normalize_issn(spec.issn)}" if spec.issn else ""
@@ -303,9 +347,9 @@ def _title_page(spec: BookSpec) -> str:
 
 
 def _half_title_page(spec: BookSpec) -> str:
-    subtitle = f'<p class="subtitle">{html.escape(spec.subtitle)}</p>\n' if spec.subtitle else ""
+    subtitle = f'<p class="subtitle">{glue(html.escape(spec.subtitle))}</p>\n' if spec.subtitle else ""
     return (f'<section epub:type="halftitlepage">\n'
-            f'<p class="title">{html.escape(spec.title)}</p>\n{subtitle}</section>')
+            f'<p class="title">{glue(html.escape(spec.title))}</p>\n{subtitle}</section>')
 
 
 def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: dict[str, str],
@@ -429,26 +473,28 @@ def build(
         book.add_metadata(None, "meta", "", {"name": "cover", "content": "cover-image"})
 
     # ---- Front matter ----
-    title_page = _add_page(book, styles, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang)
-    for file_attr, page_title, file_name, placeholder, bucket in [
+    title_page = _add_page(book, styles, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang,
+                           part="frontmatter")
+    for file_attr, page_title, file_name, placeholder, bucket, role in [
         (spec.copyright_file, "Copyright", "copyright.xhtml",
-         "[Copyright placeholder — replace with publication copyright notice.]", front),
+         "[Copyright placeholder — replace with publication copyright notice.]", front, "copyright-page"),
         (spec.imprint_file, "Imprint", "imprint.xhtml",
-         "[Imprint placeholder — publisher, edition, printing history, etc.]", front),
+         "[Imprint placeholder — publisher, edition, printing history, etc.]", front, "imprint"),
         (spec.foreword_file, "Foreword", "foreword.xhtml",
-         "[Foreword placeholder — introductory remarks by a guest writer.]", after_toc),
+         "[Foreword placeholder — introductory remarks by a guest writer.]", after_toc, "foreword"),
     ]:
         content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
         if content is not None:
-            bucket.append(_add_page(book, styles, page_title, file_name, content, spec.lang))
+            bucket.append(_add_page(book, styles, page_title, file_name, _section(role, content), spec.lang,
+                                    part="frontmatter"))
 
     if spec.intro_file:
         intro_text = Path(spec.intro_file).read_text(encoding="utf-8").strip()
         if intro_text:
             after_toc.append(_add_page(
                 book, styles, "Introduction", "intro.xhtml",
-                wrap_text_as_html("Introduction", intro_text),
-                spec.lang,
+                _section("introduction", wrap_text_as_html("Introduction", intro_text)),
+                spec.lang, part="frontmatter",
             ))
 
     # ---- Chapters ----
@@ -512,6 +558,7 @@ def build(
             img.attrs.pop("sizes", None)
 
         _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems)
+        _glue_soup(soup)
 
         feature = soup.find("figure", attrs={FEATURE_MARK: True})
         feature_html = ""
@@ -521,23 +568,25 @@ def build(
         body_content = soup.body.decode_contents() if soup.body else str(soup)
         chapters.append(_add_page(
             book, styles, post.title, f"{chapter_slug}.xhtml",
-            f'<article id="article-{chapter_number}">\n'
+            f'<article id="article-{chapter_number}" epub:type="chapter">\n'
             f"{_article_header(post, feature_html)}\n{body_content}\n</article>",
-            spec.lang,
+            spec.lang, part="bodymatter",
         ))
 
     # ---- Back matter ----
-    for file_attr, page_title, file_name, placeholder in [
+    for file_attr, page_title, file_name, placeholder, role in [
         (spec.notes_file, "Notes", "notes.xhtml",
-         "[Notes placeholder — endnotes, references, etc.]"),
+         "[Notes placeholder — endnotes, references, etc.]", None),
         (spec.acknowledgements_file, "Acknowledgements", "acknowledgements.xhtml",
-         "[Acknowledgements placeholder — thank-yous and credits.]"),
+         "[Acknowledgements placeholder — thank-yous and credits.]", "acknowledgments"),
         (spec.about_file, "About This Book", "about.xhtml",
-         "[About this publication placeholder — production credits, source, rights, etc.]"),
+         "[About this publication placeholder — production credits, source, rights, etc.]", None),
     ]:
         content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
         if content is not None:
-            back.append(_add_page(book, styles, page_title, file_name, content, spec.lang))
+            if role:
+                content = _section(role, content)
+            back.append(_add_page(book, styles, page_title, file_name, content, spec.lang, part="backmatter"))
 
     for url, _ in spec.alt_text.items():
         if normalize_image_url(url) not in used_overrides:
@@ -547,7 +596,8 @@ def build(
     # ---- Half-title page: divides real front matter from the chapters ----
     half_title = []
     if front or after_toc:
-        half_title = [_add_page(book, styles, spec.title, "halftitlepage.xhtml", _half_title_page(spec), spec.lang)]
+        half_title = [_add_page(book, styles, spec.title, "halftitlepage.xhtml", _half_title_page(spec), spec.lang,
+                                part="frontmatter")]
 
     # ---- Navigation and reading order ----
     # Reading order: title page, copyright, imprint, contents, foreword, intro,

@@ -25,6 +25,7 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 - **Titles containing `&` or `<`** no longer produce an invalid EPUB.
 
 ### Added
+- **Section roles and better line breaks** (#9): every page now declares its part of the book (front matter, body matter, back matter) and, where it fits, what it is (copyright page, imprint, foreword, introduction, chapter, acknowledgments), for reading apps' navigation. (Screen readers mostly rely on matching ARIA roles, which aren't added yet; see #8.) An invisible no-break character before em dashes and ellipses stops lines from starting with "—" or "…" (on a 360px-wide screen, 6 of 106 did before, none now). Your content files are wrapped, never changed.
 - **Alt text report and overrides** (#10): after each build, images with missing or unhelpful alt text are listed (post, position, URL, caption) with a ready-to-paste manifest block. A manifest `[alt_text]` table supplies or replaces alt text by image URL; an empty value marks an image decorative.
 - `--subtitle`, `--series`, `--series-number`, `--issn`, `--rights` and the manifest's `[sort_names]` table (#5). The ISSN identifies the series and is shown with it on the title page.
 - ISBN and ISSN validation (#5): an invalid number (wrong length or check digit) stops the build before anything is fetched. Subtitle and series appear on the title page.

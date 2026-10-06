@@ -15,7 +15,7 @@ More are on the way: more platforms, more site-specific processors and, eventual
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.14 (the version phoenix-ebook is developed and tested on)
 - A Ghost **Admin API key** for the site whose posts you want to collect. In Ghost Admin, go to **Settings → Integrations → Add custom integration** and copy the *Admin API key* (it looks like `id:secret`).
 
 ## Setup
