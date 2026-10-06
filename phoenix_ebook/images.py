@@ -30,6 +30,9 @@ def _is_svg(data: bytes) -> bool:
     return root.tag == "svg" or root.tag.endswith("}svg")
 
 
+_EXT_FOR_FORMAT = {"JPEG": ".jpg", "PNG": ".png", "GIF": ".gif", "WEBP": ".webp"}
+
+
 def validate_image(data: bytes, ext: str) -> str:
     """Return the extension to store the image under, or raise ImageFetchError.
 
@@ -39,7 +42,8 @@ def validate_image(data: bytes, ext: str) -> str:
     try:
         with Image.open(io.BytesIO(data)) as img:
             img.load()
-        return ext
+            # The bytes decide, not the URL: servers often send PNG or WebP from a ".jpg" URL.
+            return _EXT_FOR_FORMAT.get(img.format, ext)
     except Exception:
         pass
     if _is_svg(data):

@@ -188,6 +188,12 @@ def _report_problems(problems) -> None:
     if n := count("call-to-action"):
         print(f"{n} website call{'' if n == 1 else 's'}-to-action (subscribe/support) "
               f"{'was' if n == 1 else 'were'} unlinked or kept; review the warnings above", file=sys.stderr)
+    if n := count("embed-removed"):
+        print(f"{n} embedded {plural(n, 'form or poll was', 'forms or polls were')} left out; "
+              "see warnings above", file=sys.stderr)
+    if n := count("embed-unknown"):
+        print(f"{n} unrecognised {plural(n, 'embed', 'embeds')} became {plural(n, 'a link card', 'link cards')}; "
+              "see warnings above", file=sys.stderr)
     if n := count("alt-override-unused"):
         print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
 

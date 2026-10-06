@@ -12,3 +12,21 @@ def mark_call_to_action(soup, link) -> None:
     span = soup.new_tag("span", attrs={CALL_TO_ACTION: link.get("href", "")})
     span.extend(list(link.contents))
     link.replace_with(span)
+
+# ---- Link cards (docs/canonical-html.md): embedded videos, audio, posts and bookmarks ----
+
+CARD_CLASS = "card"
+# An image with no meaning of its own (a card's thumbnail): no alt text wanted, none reported.
+DECORATIVE = "data-decorative"
+# On a card's thumbnail <img> without src: an oEmbed URL the builder asks for the thumbnail's URL.
+THUMBNAIL_LOOKUP = "data-thumbnail-lookup"
+# On a card's thumbnail <img>: a second URL to try if src can't be downloaded.
+THUMBNAIL_FALLBACK = "data-fallback-src"
+# On text inside a card with a thumbnail lookup: a str.format template filled from the
+# lookup's answer (e.g. "{author_name} (@handle)"); the element's text stays if it fails.
+OEMBED_TEXT = "data-oembed-text"
+# An embed left out of the book (e.g. a form); the value says what it was. Reported.
+EMBED_REMOVED = "data-embed-removed"
+# On a card made from an embed nobody recognised; the value is its source URL. Reported.
+EMBED_UNKNOWN = "data-embed-unknown"
+EMBED_SRC = "data-embed-src"

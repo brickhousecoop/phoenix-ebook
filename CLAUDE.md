@@ -23,7 +23,9 @@ phoenix_ebook/
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
 ├── alt_text.py                 # alt text checks (missing/suspicious) and URL-keyed overrides
 ├── errors.py                   # PhoenixError + subclasses; explain_response() for HTTP bodies
-├── canonical.py                # shared canonical-HTML helpers (call-to-action markers)
+├── canonical.py                # shared canonical-HTML markers (call-to-action, link cards)
+├── embeds.py                   # third-party embeds (YouTube, X, TikTok, …) -> link cards; provider rules
+├── dates.py                    # format_date(): dates as books show them
 ├── styles/
 │   ├── core.css                # Standard Ebooks snapshot (CC0) — never edit; see its header
 │   └── phoenix.css             # our styles for our markup; all overrides go here

@@ -132,3 +132,46 @@ a[epub|type~="noteref"]{
 	margin: 0 -0.35em;
 	padding: 0.35em;
 }
+
+/* ---- Link cards: embedded videos, audio, social posts, bookmarks ---- */
+
+/* A rule down the left, text left-aligned (social posts were centred as figures). */
+figure.card{
+	border-left: 3px solid;
+	margin: 1.5em 0 1.5em .5em;
+	padding: .1em 0 .1em 1em;
+	text-align: left;
+}
+
+figure.card p,
+figure.card figcaption{
+	margin: .3em 0;
+	text-align: left;
+	text-indent: 0;
+}
+
+figure.card p.label{
+	font-size: smaller;
+	font-variant: small-caps;
+	letter-spacing: .05em;
+}
+
+figure.card p.title{
+	font-weight: bold;
+}
+
+figure.card p.source{
+	font-size: smaller;
+	font-style: italic;
+}
+
+figure.card blockquote{
+	margin: .3em 0;
+}
+
+/* A preview, not a full-page picture. */
+figure.card img.thumbnail{
+	margin: .4em 0;
+	max-height: 12em;
+	width: auto;
+}

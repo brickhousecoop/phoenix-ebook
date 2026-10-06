@@ -6,7 +6,7 @@ import re
 import pytest
 import requests
 
-from conftest import FakeResponse, FakeSession, SVG, ok, png, post
+from conftest import FakeResponse, FakeSession, SVG, assert_valid_epub, ok, png, post
 from phoenix_ebook.images import ImageFetchError, fetch_image, validate_image
 from phoenix_ebook.models import BuildResult
 
@@ -54,6 +54,18 @@ def test_gives_up_after_one_retry():
 
 def test_validate_accepts_raster_and_keeps_extension():
     assert validate_image(png(), ".png") == ".png"
+
+
+def test_validate_goes_by_the_bytes_not_the_url():
+    # e.g. a news site's image server sends a PNG from a ".jpg" URL (#21: epubcheck OPF-029)
+    assert validate_image(png(), ".jpg") == ".png"
+
+
+def test_png_from_a_jpg_url_is_stored_as_png(build_book):
+    url = "https://img.test/photo.jpg?width=1200"
+    book = build_book(post(f'<img src="{url}" alt="A photo">'), {url: [ok(png())]}, optimize_images=False)
+    assert [n.rsplit(".", 1)[1] for n in book.image_names()] == ["png"]
+    assert_valid_epub(book.path)
 
 
 def test_validate_detects_svg_without_extension():

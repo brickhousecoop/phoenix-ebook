@@ -38,6 +38,30 @@ A button is a single link styled as a button on the website:
 
 Site processors decide which buttons a book keeps (Flaming Hydra removes subscribe, share and shop buttons). Ghost: button cards (`kg-button-card`).
 
+## Link cards
+
+Embedded media (videos, audio, social posts, bookmarked pages) become a link card: a reader can't play an embed in a book, but can follow a link.
+
+```html
+<figure class="card" data-card="video">
+  <img class="thumbnail" src="https://i.ytimg.com/vi/ID/maxresdefault.jpg" alt="" data-decorative=""
+       data-fallback-src="https://i.ytimg.com/vi/ID/mqdefault.jpg"/>
+  <p class="label">Video</p>
+  <p class="title"><a href="https://www.youtube.com/watch?v=ID">The video's title</a></p>
+  <p class="description">…</p>                  <!-- bookmarks -->
+  <blockquote><p>The post's text…</p></blockquote>   <!-- social posts, instead of a title -->
+  <p class="source">YouTube</p>
+  <figcaption>…the post's own caption, if any…</figcaption>
+</figure>
+```
+
+- `data-card`: `video`, `audio`, `link`, `post` or `embed` (unrecognised). The label is text, not an icon.
+- Only the label is required; the source line's parts are joined with " · ".
+- The thumbnail is **decorative** (`data-decorative`): empty alt text by design, not reported. `data-fallback-src` is tried if `src` fails. When the thumbnail's address must be looked up, the `<img>` has no `src` but `data-thumbnail-lookup` (an oEmbed URL); text with `data-oembed-text="{author_name} (@handle)"` is filled from the same answer, or keeps its text. The builder resolves and removes all of these.
+- An embed left out of the book (a form) is replaced by `<div data-embed-removed="Tally form" data-embed-src="…"></div>`; a card made from an unrecognised embed carries `data-embed-unknown="<its URL>"`. The builder reports both and removes the markers.
+
+`phoenix_ebook/embeds.py` builds these from an embed's `<iframe>` or a social post's quote (provider rules, not platform rules). Ghost: embed, audio, video and bookmark cards, plus iframes pasted in HTML cards.
+
 ## Call-to-action markers
 
 When a layer removes a website call-to-action **link** but keeps its words, it marks them so the builder can report the paragraph to the editor; the builder then removes the marker:

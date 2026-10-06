@@ -4,11 +4,11 @@ from __future__ import annotations
 import hashlib
 import html
 import io
+import json
 import os
 import re
 import uuid
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urljoin, urlparse
@@ -19,7 +19,9 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
-from phoenix_ebook.canonical import CALL_TO_ACTION, CALL_TO_ACTION_BANNER
+from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
+                                     EMBED_SRC, EMBED_UNKNOWN, OEMBED_TEXT, THUMBNAIL_FALLBACK, THUMBNAIL_LOOKUP)
+from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
 from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
@@ -239,25 +241,11 @@ def _remove_image(img) -> None:
     img.decompose()
     if link is not None and not link.get_text(strip=True) and link.find(True) is None:
         link.decompose()
-    if figure is not None and figure.find("img") is None:
-        figure.decompose()
+    if figure is not None and figure.find("img") is None and CARD_CLASS not in figure.get("class", []):
+        figure.decompose()  # a link card stays: its text and link still work without the picture
 
 
 FEATURE_MARK = "data-feature-image"
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-
-def _format_date(timestamp: str | None) -> str | None:
-    """'2026-08-24T20:04:00-04:00' -> '24 Aug 2026' (the date as written, no tz shift)."""
-    if not timestamp:
-        return None
-    try:
-        d = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return f"{d.day:02d} {_MONTHS[d.month - 1]} {d.year}"
-
-
 def _byline(authors: list[Author]) -> str | None:
     if not authors:
         return None
@@ -439,6 +427,52 @@ def _report_calls_to_action(soup, post: Post, problems: list[BuildProblem]) -> N
         del figure[CALL_TO_ACTION_BANNER]
 
 
+def _report_embeds(soup, post: Post, problems: list[BuildProblem]) -> None:
+    """Report and unmark embeds left out of the book or turned into generic link cards (#21)."""
+    for marker in soup.find_all(attrs={EMBED_REMOVED: True}):
+        problems.append(BuildProblem(kind="embed-removed", post_slug=post.slug, url=marker.get(EMBED_SRC),
+                                     detail=f"{marker[EMBED_REMOVED]} left out (it only works on the website)"))
+        marker.decompose()
+    for card in soup.find_all(attrs={EMBED_UNKNOWN: True}):
+        problems.append(BuildProblem(kind="embed-unknown", post_slug=post.slug, url=card[EMBED_UNKNOWN],
+                                     detail="unrecognised embedded content became a link card; check it reads well"))
+        del card[EMBED_UNKNOWN]
+
+
+def _lookup_thumbnails(soup, post: Post, session, cache: dict, problems: list[BuildProblem]) -> None:
+    """Ask oEmbed endpoints for link-card thumbnails (and author names) before images are fetched.
+
+    A failed lookup leaves the card without a thumbnail, reported like a failed image.
+    """
+    for img in soup.find_all("img", attrs={THUMBNAIL_LOOKUP: True}):
+        endpoint = img.attrs.pop(THUMBNAIL_LOOKUP)
+        if endpoint not in cache:
+            try:
+                body, _ = fetch_image(session, endpoint)
+                cache[endpoint] = json.loads(body)
+                if not isinstance(cache[endpoint], dict):
+                    raise ValueError("not a JSON object")
+            except (ImageFetchError, ValueError) as exc:
+                cache[endpoint] = f"thumbnail lookup failed: {exc}"
+        answer = cache[endpoint]
+        card = img.find_parent("figure") or soup
+        if isinstance(answer, dict):
+            for element in card.find_all(attrs={OEMBED_TEXT: True}):
+                try:
+                    element.string = element[OEMBED_TEXT].format_map(answer)
+                except (KeyError, ValueError, IndexError):
+                    pass  # keep the text the platform wrote
+        thumbnail = answer.get("thumbnail_url") if isinstance(answer, dict) else None
+        if isinstance(thumbnail, str) and thumbnail.startswith(("http://", "https://")):
+            img["src"] = thumbnail
+        else:
+            problems.append(BuildProblem(kind="image-download-failed", post_slug=post.slug, url=endpoint,
+                                         detail=answer if isinstance(answer, str) else "no thumbnail in the answer"))
+            img.decompose()
+    for element in soup.find_all(attrs={OEMBED_TEXT: True}):
+        del element[OEMBED_TEXT]
+
+
 def _is_animated(data: bytes) -> bool:
     try:
         with Image.open(io.BytesIO(data)) as img:
@@ -512,10 +546,15 @@ def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: d
         where = dict(post_slug=post.slug, url=url, location=f"image {position} of {len(images)}", caption=caption)
 
         tally["images"] += 1
+        decorative = img.attrs.pop(DECORATIVE, None) is not None
         if key in overrides:
             img["alt"] = overrides[key]  # "" marks a decorative image
             used.add(key)
             tally["described" if overrides[key].strip() else "decorative"] += 1
+            continue
+        if decorative:
+            img["alt"] = ""
+            tally["decorative"] += 1
             continue
         alt = img.get("alt")
         if alt is None or not alt.strip():
@@ -597,6 +636,7 @@ def build(
     used_overrides: set[str] = set()
     image_tally: Counter = Counter()  # images / described / decorative / missing, for accessibility metadata
     has_animation = False
+    oembed_answers: dict = {}  # oEmbed URL -> answer (dict) or failure reason, once per book
     problems: list[BuildProblem] = []
 
     # ---- Cover (metadata only: no cover page, see #6) ----
@@ -660,43 +700,53 @@ def build(
         _report_calls_to_action(soup, post, problems)
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
-        for img in soup.find_all("img"):
-            src = img.get("src", "")
-            if not src:
-                continue
-            src = urljoin(image_base_url, src) if image_base_url else src
-            parsed = urlparse(src)
-            ext = os.path.splitext(parsed.path.split("?")[0])[1].lower() or ".jpg"
+        _report_embeds(soup, post, problems)
+        _lookup_thumbnails(soup, post, session, oembed_answers, problems)
+
+        def load(src: str) -> None:
+            """Fetch, check and embed ``src`` once; failures go to ``failed_images``."""
+            nonlocal has_animation
+            if src in image_items or src in failed_images:
+                return
+            ext = os.path.splitext(urlparse(src).path)[1].lower() or ".jpg"
             if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"):
                 ext = ".jpg"
-
             uid = hashlib.sha1(src.encode()).hexdigest()[:12]
-
-            if src not in image_items and src not in failed_images:
+            try:
+                data, content_type = fetch_image(session, src)
                 try:
-                    data, content_type = fetch_image(session, src)
-                    try:
-                        ext = validate_image(data, ext)
-                    except ImageFetchError as exc:
-                        raise ImageFetchError(f"{exc} (Content-Type: {content_type})") from None
-                    size = None
-                    if spec.optimize_images:
-                        data, ext, size = optimize_image(
-                            data, ext, max_width=spec.image_max_width, quality=spec.image_quality
-                        )
-                    has_animation = has_animation or _is_animated(data)
-                    fname = f"{chapter_slug}_{uid}{ext}"
-                    item = epub.EpubItem(
-                        uid=f"img_{uid}",
-                        file_name=f"images/{fname}",
-                        media_type=media_type_for_ext(ext),
-                        content=data,
-                    )
-                    book.add_item(item)
-                    image_items[src] = item
-                    image_sizes[src] = size
+                    ext = validate_image(data, ext)
                 except ImageFetchError as exc:
-                    failed_images[src] = str(exc)
+                    raise ImageFetchError(f"{exc} (Content-Type: {content_type})") from None
+                size = None
+                if spec.optimize_images:
+                    data, ext, size = optimize_image(
+                        data, ext, max_width=spec.image_max_width, quality=spec.image_quality
+                    )
+                has_animation = has_animation or _is_animated(data)
+                item = epub.EpubItem(
+                    uid=f"img_{uid}",
+                    file_name=f"images/{chapter_slug}_{uid}{ext}",
+                    media_type=media_type_for_ext(ext),
+                    content=data,
+                )
+                book.add_item(item)
+                image_items[src] = item
+                image_sizes[src] = size
+            except ImageFetchError as exc:
+                failed_images[src] = str(exc)
+
+        resolve = (lambda u: urljoin(image_base_url, u)) if image_base_url else (lambda u: u)
+        for img in soup.find_all("img"):
+            fallback = img.attrs.pop(THUMBNAIL_FALLBACK, None)
+            if not img.get("src"):
+                continue
+            src = resolve(img["src"])
+            load(src)
+            if src in failed_images and fallback:
+                load(resolve(fallback))
+                if resolve(fallback) in image_items:
+                    src = resolve(fallback)
 
             if src in failed_images:
                 problems.append(BuildProblem(

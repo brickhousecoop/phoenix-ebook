@@ -37,8 +37,12 @@ _Avoid_: Collection (ambiguous with the book itself), volume
 ## Book structure
 
 **Decorative image**:
-An image that conveys no content (a divider, an ornament), marked in the book's alt-text table with an empty description so it gets empty alt text and isn't reported as missing.
+An image that conveys no content (a divider, an ornament, a link card's thumbnail), given empty alt text on purpose so it isn't reported as missing. Link-card thumbnails are decorative automatically; other images are marked in the book's alt-text table with an empty description.
 _Avoid_: Spacer, ornament image
+
+**Link card**:
+What an embedded video, audio player, social post or bookmarked page becomes in a book: a label, a link to it (or the post's text), its source and, for videos and bookmarks, a decorative thumbnail.
+_Avoid_: Embed (that's the website's live player), preview, widget
 
 **Chapter**:
 A post's page in the book. A book's chapters are its posts, in the order given.

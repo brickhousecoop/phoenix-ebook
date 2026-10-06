@@ -15,6 +15,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from phoenix_ebook.canonical import mark_call_to_action
+from phoenix_ebook.embeds import iframe_card, link_card, social_card
 from phoenix_ebook.errors import AuthError, PostNotFound, SourceUnreachable, explain_response
 from phoenix_ebook.models import Author, Post
 from phoenix_ebook.platforms.base import Platform, register_platform
@@ -57,14 +58,16 @@ class GhostPlatform(Platform):
         """Ghost's dialect -> canonical chapter HTML (docs/canonical-html.md).
 
         Converts button cards to canonical buttons, removes or unlinks Ghost
-        "portal" links (dead outside the website), drops the editor's ``kg-*``
-        card classes, and converts Markdown-card (markdown-it) footnotes to
-        canonical notes.
+        "portal" links (dead outside the website), turns embed, audio, video and
+        bookmark cards (and embeds pasted in HTML cards) into link cards, drops
+        the editor's ``kg-*`` card classes, and converts Markdown-card
+        (markdown-it) footnotes to canonical notes.
         """
-        if "kg-" not in html and "footnote" not in html and "#/portal" not in html:
+        if not any(mark in html for mark in ("kg-", "footnote", "#/portal", "<iframe", "<blockquote")):
             return html
         soup = BeautifulSoup(html, "html.parser")
         _convert_buttons_and_portal_links(soup)
+        _convert_media_cards(soup)
         for tag in soup.find_all(class_=True):
             classes = [c for c in tag.get("class", []) if not c.startswith("kg-")]
             if classes:
@@ -236,3 +239,89 @@ def _convert_buttons_and_portal_links(soup) -> None:
     for link in soup.find_all("a", href=True):
         if _is_portal_link(link["href"]):
             mark_call_to_action(soup, link)
+
+
+def _caption(card) -> object | None:
+    caption = card.find("figcaption")
+    return caption.extract() if caption is not None else None
+
+
+def _replace_card(card, replacement, caption=None) -> None:
+    """Swap a Ghost card for its link card, keeping the post's caption under the link card."""
+    if caption is not None and replacement.name == "figure":
+        replacement.append(caption)
+    card.replace_with(replacement)
+
+
+def _duration(text: str) -> str | None:
+    """Ghost's audio duration (seconds, '2229.705261') or video duration ('0:11') for a source line."""
+    text = text.strip()
+    if re.fullmatch(r"\d+(\.\d+)?", text):
+        seconds = round(float(text))
+        return f"{round(seconds / 60)} min" if seconds >= 60 else f"{seconds} sec"
+    return text or None
+
+
+def _file_kind(url: str, medium: str) -> str:
+    ext = urlsplit(url).path.rsplit(".", 1)[-1] if "." in urlsplit(url).path.rsplit("/", 1)[-1] else ""
+    return f"{ext.upper()} {medium}" if ext else f"{medium.capitalize()} file"
+
+
+def _convert_media_cards(soup) -> None:
+    """Embed, audio, video and bookmark cards (and loose embeds) -> canonical link cards (#21)."""
+    for card in soup.find_all(class_="kg-embed-card"):
+        caption = _caption(card)
+        embed = card.find("iframe")
+        quote = card.find("blockquote")
+        replacement = (iframe_card(soup, embed) if embed is not None
+                       else social_card(soup, quote) if quote is not None else None)
+        if replacement is None:  # a quote from somewhere we don't know: keep it, minus scripts
+            for script in card.find_all("script"):
+                script.decompose()
+            if caption is not None:
+                card.append(caption)
+            continue
+        _replace_card(card, replacement, caption)
+
+    for card in soup.find_all(class_="kg-audio-card"):
+        audio = card.find("audio")
+        src = audio.get("src", "") if audio else ""
+        title = card.find(class_="kg-audio-title")
+        duration = card.find(class_="kg-audio-duration")
+        source = [_file_kind(src, "audio")] + ([d] if duration and (d := _duration(duration.get_text())) else [])
+        _replace_card(card, link_card(soup, "audio", "Audio", href=src or None,
+                                      title=(title.get_text(" ", strip=True) if title else "") or "Listen",
+                                      source=source), _caption(card))
+
+    for card in soup.find_all(class_="kg-video-card"):
+        video = card.find("video")
+        src = video.get("src", "") if video else ""
+        duration = card.find(class_="kg-video-duration")
+        source = [_file_kind(src, "video")] + ([d] if duration and (d := _duration(duration.get_text())) else [])
+        _replace_card(card, link_card(soup, "video", "Video", href=src or None, title="Watch the video",
+                                      source=source, thumbnail=card.get("data-kg-thumbnail") or None),
+                      _caption(card))
+
+    for card in soup.find_all(class_="kg-bookmark-card"):
+        link = card.find("a", href=True)
+        def text(cls):
+            tag = card.find(class_=cls)
+            return tag.get_text(" ", strip=True) if tag else ""
+        # Ghost's "author" span holds the site's name and its "publisher" span the writer's: show writer · site.
+        source = list(dict.fromkeys(t for t in (text("kg-bookmark-publisher"), text("kg-bookmark-author")) if t))
+        description = text("kg-bookmark-description")
+        if description and not re.search(r"[.!?…\"”’)]$", description):
+            description += "…"  # Ghost cuts descriptions off mid-sentence
+        thumbnail = card.select_one(".kg-bookmark-thumbnail img")
+        _replace_card(card, link_card(soup, "link", "Link", href=link["href"] if link else None,
+                                      title=text("kg-bookmark-title") or (link["href"] if link else "Link"),
+                                      description=description or None, source=source or None,
+                                      thumbnail=(thumbnail.get("src") or None) if thumbnail else None),
+                      _caption(card))
+
+    # Embeds pasted into HTML cards: no Ghost card around them.
+    for iframe in soup.find_all("iframe"):
+        wrapper = iframe.parent
+        only_child = (wrapper is not None and wrapper.name == "div"
+                      and not wrapper.get_text(strip=True) and len(wrapper.find_all(True)) == 1)
+        (wrapper if only_child else iframe).replace_with(iframe_card(soup, iframe))
