@@ -21,7 +21,7 @@ More are on the way: more platforms, more site-specific processors and, eventual
 ## Setup
 
 ```bash
-git clone https://github.com/buffystruggles/phoenix-ebook.git
+git clone https://github.com/brickhousecoop/phoenix-ebook.git
 cd phoenix-ebook
 
 # with uv (recommended)

@@ -60,7 +60,7 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 
 ### Issue tracker
 
-GitHub Issues on `buffystruggles/phoenix-ebook`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `brickhousecoop/phoenix-ebook`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

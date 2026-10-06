@@ -149,7 +149,7 @@ At the very end of the output, a commented-out block starting `# Add to your man
 
 Add `--debug` to see the full traceback behind an `error:` message.
 
-If the build ends with **`error: unexpected failure, which is a bug in phoenix-ebook`** and a traceback, that's not something you did wrong. Please [open an issue](https://github.com/buffystruggles/phoenix-ebook/issues) with the traceback and the command you ran (leave out your API key).
+If the build ends with **`error: unexpected failure, which is a bug in phoenix-ebook`** and a traceback, that's not something you did wrong. Please [open an issue](https://github.com/brickhousecoop/phoenix-ebook/issues) with the traceback and the command you ran (leave out your API key).
 
 ## Firewalls and proxies
 

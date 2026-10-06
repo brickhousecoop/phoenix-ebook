@@ -164,7 +164,7 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     _report_problems(result.problems)
 
 
-TROUBLESHOOTING_URL = "https://github.com/buffystruggles/phoenix-ebook/blob/main/docs/troubleshooting.md"
+TROUBLESHOOTING_URL = "https://github.com/brickhousecoop/phoenix-ebook/blob/main/docs/troubleshooting.md"
 
 
 def _report_problems(problems) -> None:
