@@ -123,3 +123,12 @@ nav[epub|type~="toc"] ol{
 nav[epub|type~="toc"] li{
 	margin: .5em 0;
 }
+
+/* ---- Notes ---- */
+
+/* A superscript number is a tiny touch target: enlarge the tappable area
+   without moving anything (padding offset by negative margin). */
+a[epub|type~="noteref"]{
+	margin: 0 -0.35em;
+	padding: 0.35em;
+}

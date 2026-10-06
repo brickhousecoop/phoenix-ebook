@@ -53,8 +53,12 @@ class GhostPlatform(Platform):
     default_processor = "generic"
 
     def normalize_html(self, html: str) -> str:
-        """Ghost's dialect -> canonical chapter HTML: drop editor ``kg-*`` card classes."""
-        if "kg-" not in html:
+        """Ghost's dialect -> canonical chapter HTML (docs/canonical-html.md).
+
+        Drops the editor's ``kg-*`` card classes and converts Markdown-card
+        (markdown-it) footnotes to canonical notes.
+        """
+        if "kg-" not in html and "footnote" not in html:
             return html
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup.find_all(class_=True):
@@ -63,6 +67,7 @@ class GhostPlatform(Platform):
                 tag["class"] = classes
             else:
                 del tag["class"]
+        _convert_markdown_footnotes(soup)
         return str(soup)
 
     def canonical_image_url(self, url: str) -> str:
@@ -162,3 +167,42 @@ def _auth_error(r, host: str, url: str) -> AuthError:
     return AuthError(f"Ghost rejected the Admin API key for {host} (HTTP {r.status_code})"
                      + (f": {why}" if why else "")
                      + f". Check the key, or store a new one: build_epub.py --set-secret --platform ghost --url {url}")
+
+
+def _convert_markdown_footnotes(soup) -> None:
+    """markdown-it footnotes (Ghost's Markdown card) -> canonical notes.
+
+    Only the exact markdown-it structure is converted: a ``sup.footnote-ref`` link
+    to an ``li.footnote-item`` inside this post's ``section.footnotes``.
+    """
+    section = soup.find("section", class_="footnotes")
+    if section is None:
+        return
+    items = [li for li in section.find_all("li", class_="footnote-item") if li.get("id")]
+    note_ids = {li["id"] for li in items}
+    if not note_ids:
+        return
+
+    for sup in soup.find_all("sup", class_="footnote-ref"):
+        link = sup.find("a", href=True)
+        if link is None or link["href"][1:] not in note_ids or not link["href"].startswith("#"):
+            continue
+        link["epub:type"] = "noteref"
+        link["role"] = "doc-noteref"
+        link.string = re.sub(r"^\[(.+)\]$", r"\1", link.get_text().strip())  # "[1]" -> "1"
+        sup.unwrap()  # core.css already sets noterefs as superscript
+
+    for rule in soup.find_all("hr", class_="footnotes-sep"):
+        rule.decompose()
+    section.attrs = {"epub:type": "endnotes", "role": "doc-endnotes"}
+    heading = soup.new_tag("h3")
+    heading.string = "Notes"
+    section.insert(0, heading)
+    for ol in section.find_all("ol", class_="footnotes-list"):
+        del ol["class"]
+    for li in items:
+        del li["class"]
+        li["epub:type"] = "endnote"  # no ARIA role: doc-endnote is deprecated (items of doc-endnotes)
+    for backlink in section.find_all("a", class_="footnote-backref"):
+        del backlink["class"]
+        backlink["role"] = "doc-backlink"

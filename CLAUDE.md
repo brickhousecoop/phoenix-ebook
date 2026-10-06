@@ -31,7 +31,7 @@ tests/                          # offline pytest suite (fixtures in conftest.py)
 scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
 ```
 
-Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`). Adding site quirks = new processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.
+Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`; the canonical forms, e.g. notes, are in `docs/canonical-html.md`). Adding site quirks = new processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.
 
 ## Setup, usage, secrets
 

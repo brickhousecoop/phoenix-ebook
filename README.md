@@ -158,6 +158,8 @@ The cover (`--cover`) is the book's cover image in reading apps and libraries; i
 
 Each chapter opens with a header: the post's publication date (in the site's timezone), its title, a "By …" byline linking to each author's page, and the post's feature image with its caption. The contents page lists each chapter by its title; a site's processor can add more (Flaming Hydra books show "Title — Author").
 
+Footnotes in posts (Ghost's Markdown card) become notes at the end of their chapter, with a "Notes" heading; tapping a note number opens the note in a pop-up in reading apps that support it, such as Thorium.
+
 Content files are HTML fragments, inserted as-is; start them with an `<h2>` heading (the title page holds the book's `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
 ### Images
@@ -222,7 +224,7 @@ phoenix_ebook/
 └── styles/              # core.css (Standard Ebooks, unmodified) + phoenix.css
 ```
 
-Each platform converts its own HTML dialect into one **canonical chapter HTML**; everything after that (site processors, the builder, images, alt text, styles) only sees the canonical form. Platform quirks belong in the platform, site quirks in a site processor. See [ADR 0001](docs/adr/0001-platforms-normalize-to-canonical-html.md).
+Each platform converts its own HTML dialect into one **canonical chapter HTML**; everything after that (site processors, the builder, images, alt text, styles) only sees the canonical form. Platform quirks belong in the platform, site quirks in a site processor. See [ADR 0001](docs/adr/0001-platforms-normalize-to-canonical-html.md) and the canonical forms a platform must produce, such as notes, in [docs/canonical-html.md](docs/canonical-html.md).
 
 **New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name` (and `default_processor` if not `"generic"`), decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, run through your `normalize_html()` so it's canonical (Ghost's, for example, drops editor `kg-*` classes); authors as `Author(name, url)`; `published_at` in the site's own timezone; and the feature image fields if the platform has them. Override `canonical_image_url()` if the platform serves size variants of the same image. The docstrings on `Platform` have the full contract, including the errors to raise.
 
