@@ -41,7 +41,7 @@ Store the key once per site; you'll be prompted for it without echo:
 .venv/bin/python build_epub.py --set-secret --platform ghost --url https://flaminghydra.ghost.io
 ```
 
-`--set-secret` uses your OS keyring, falling back to a file. On machines without a keyring (containers, servers), use `--set-secret-file`, which writes `~/.phoenix_secrets.json` with owner-only permissions.
+The key is stored under the URL's host name; use `--domain` to give the host explicitly instead. `--set-secret` uses your OS keyring, falling back to a file. On machines without a keyring (containers, servers), use `--set-secret-file`, which writes `~/.phoenix_secrets.json` with owner-only permissions.
 
 phoenix-ebook looks for a key in this order:
 
@@ -124,6 +124,9 @@ quality = 85
 | `--subtitle` | `subtitle` | Shown under the title on the title page and half-title page. |
 | `--series`, `--series-number` | `series`, `series_number` | E.g. "Flaming Hydra Digest", 368. Shown on the title page; lets apps group the books. |
 | `--rights` | `rights` | Rights statement in the book's metadata. Left out if not given. |
+| `--description` | `description` | The book's description, shown in reading apps and catalogues. |
+| `--pub-date` | `pub_date` | Publication date, e.g. `2026-09-29`. |
+| `--lang` | `lang` | Language code (default `en`; e.g. `en-US`). |
 | `--isbn` | `isbn` | This book's ISBN (one per book and format), stored as a standard `urn:isbn:` identifier. |
 | `--issn` | `issn` | The series' ISSN (one number for all issues; needs `--series`). Shown with the series on the title page. |
 
@@ -212,8 +215,11 @@ phoenix_ebook/
 ├── processors/          # per-site HTML cleanup
 ├── epub_builder.py      # EPUB assembly
 ├── images.py            # image fetching, validation and optimization
+├── alt_text.py          # alt text checks and overrides
+├── errors.py            # PhoenixError and its subclasses (user-fixable failures)
 ├── models.py            # Post, Author, BookSpec, SourceSpec, BuildResult, BuildProblem
-└── secrets.py           # API key storage
+├── secrets.py           # API key storage
+└── styles/              # core.css (Standard Ebooks, unmodified) + phoenix.css
 ```
 
 **New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name`, decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, authors as `Author(name, url)`, `published_at` in the site's own timezone, and the feature image fields if the platform has them. The docstring on `Platform.fetch_post` has the full contract.
@@ -243,7 +249,16 @@ for problem in result.problems:   # e.g. images that couldn't be downloaded
     print(problem.kind, problem.post_slug, problem.url, problem.detail)
 ```
 
-`build()` never fails because of an image; those come back in `result.problems`.
+`build()` never fails because of an image; those come back in `result.problems`. Failures the user can fix (a rejected key, a missing post, an unreachable site, an invalid option or manifest, an unwritable output path) raise a subclass of `phoenix_ebook.errors.PhoenixError` whose message says what to do next, e.g. `PostNotFound` lists every missing slug. Catch `PhoenixError` to show the message; anything else escaping is a bug:
+
+```python
+from phoenix_ebook.errors import PhoenixError
+
+try:
+    result = build(spec, posts, processor, session=session, image_base_url=site)
+except PhoenixError as exc:
+    show_to_user(str(exc))
+```
 
 ## Development
 

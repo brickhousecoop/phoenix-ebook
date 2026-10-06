@@ -9,6 +9,8 @@ from phoenix_ebook.processors.base import HtmlProcessor, register_processor
 
 @register_processor
 class FlamingHydraProcessor(HtmlProcessor):
+    """Flaming Hydra: drops the comments footer, and labels contents entries "Title — Author"."""
+
     name = "flaminghydra"
 
     def display_title(self, post: Post) -> str:

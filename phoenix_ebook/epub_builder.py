@@ -47,6 +47,8 @@ def sanitize_filename(name: str) -> str:
 
 
 def wrap_text_as_html(title: str, text: str) -> str:
+    """Content-file text as HTML: HTML passes through unchanged; plain text becomes
+    an <h2> title plus one paragraph per non-empty line."""
     if text.strip().startswith("<"):
         return text
     paragraphs = "".join(f"<p>{line}</p>" for line in text.splitlines() if line.strip())

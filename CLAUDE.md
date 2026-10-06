@@ -21,6 +21,8 @@ phoenix_ebook/
 │   ├── base.py                 # HtmlProcessor (shared cleanup in clean()) + GenericProcessor
 │   └── flaminghydra.py         # site-specific rules for flaminghydra
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
+├── alt_text.py                 # alt text checks (missing/suspicious) and URL-keyed overrides
+├── errors.py                   # PhoenixError + subclasses; explain_response() for HTTP bodies
 ├── styles/
 │   ├── core.css                # Standard Ebooks snapshot (CC0) — never edit; see its header
 │   └── phoenix.css             # our styles for our markup; all overrides go here
