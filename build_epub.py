@@ -164,6 +164,9 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     _report_problems(result.problems)
 
 
+TROUBLESHOOTING_URL = "https://github.com/buffystruggles/phoenix-ebook/blob/main/docs/troubleshooting.md"
+
+
 def _report_problems(problems) -> None:
     if not problems:
         return
@@ -205,6 +208,11 @@ def _report_problems(problems) -> None:
     if n := count("alt-override-unused"):
         print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
 
+    print(f"What these warnings mean: {TROUBLESHOOTING_URL}", file=sys.stderr)
+    _print_alt_text_block(problems)  # last, so it can be copied to the end of the output
+
+
+def _print_alt_text_block(problems) -> None:
     to_fix = [p for p in problems if p.kind in ("image-missing-alt", "image-suspicious-alt")]
     if to_fix:
         print('\n# Add to your manifest and fill in (leave "" only for purely decorative images):\n# [alt_text]',

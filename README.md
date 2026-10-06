@@ -69,6 +69,8 @@ A post's slug is the last part of its URL: `https://flaminghydra.com/fender-bend
 
 The processor is picked from the URL automatically; override it with `--processor`. Run `--help` for every option.
 
+If the build stops with an `error:` or prints warnings, [docs/troubleshooting.md](docs/troubleshooting.md) explains each message and what to do.
+
 ### Manifest file
 
 For books you rebuild or tweak often, describe the book in TOML and pass `--manifest`:
@@ -180,9 +182,9 @@ By default, post images are scaled down to at most 1100px wide and re-encoded as
 
 The cover image is handled separately and isn't affected by these options.
 
-Link-card thumbnails come from the video or page's own site: YouTube (`i.ytimg.com`) and bookmark images directly; for TikTok (`www.tiktok.com`, then `*.tiktokcdn.com` / `*.tiktokcdn-us.com`), Vimeo (`vimeo.com`, then `i.vimeocdn.com`) and Spotify (`open.spotify.com`, then `*.scdn.co`), the build first asks the site for the thumbnail's address. Behind a firewall, allow these hosts; otherwise the cards simply have no thumbnail.
+Link-card thumbnails come from the video or page's own site; for TikTok, Vimeo and Spotify the build first asks the site for the thumbnail's address.
 
-If an image can't be downloaded (network error, HTTP error, or a response that isn't actually an image), it is left out of the book and the build still succeeds; each one is listed as a warning after the build. Temporary failures (timeouts, connection errors, HTTP 5xx/429) are retried once.
+If an image can't be downloaded, it is left out of the book and the build still succeeds; temporary failures are retried once, and each failure is listed after the build. Behind a firewall, see [Firewalls and proxies](docs/troubleshooting.md#firewalls-and-proxies) for the hosts a build contacts.
 
 ### Alt text
 
