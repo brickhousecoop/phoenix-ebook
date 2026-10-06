@@ -44,6 +44,10 @@ _Avoid_: TOC page, nav
 The pages before the first chapter: title page, copyright, imprint, contents page, foreword, introduction, and half-title page.
 _Avoid_: Preliminaries, prelims
 
+**Note**:
+Text a post attaches to a point in its body (a numbered marker in the text), shown at the end of that post's chapter and as a pop-up in reading apps that support it. Not the "Notes" back-matter page, which is book-level.
+_Avoid_: Footnote (it isn't at the foot of a page), citation
+
 **Back matter**:
 The pages after the last chapter: notes, acknowledgements, and "About This Book".
 _Avoid_: End matter, appendix
