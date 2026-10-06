@@ -5,6 +5,8 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 ## Unreleased
 
 ### Changed
+- **Friendly errors** (#14): common mistakes print one actionable line instead of a Python traceback, with exit code 1: a wrong or malformed key, no stored key, mistyped slugs (all listed at once), the public site URL instead of the Ghost address (it redirects, which drops the key), an unreachable or firewall-blocked host (with the firewall's explanation), a broken or incomplete manifest, an unknown platform or processor, a missing output folder, and a content file that isn't UTF-8. `--debug` shows the traceback; real bugs always do. Ctrl-C prints `interrupted` (exit 130).
+- **No half-written books** (#14): the EPUB is written to a temporary file and renamed into place when complete, so a failed or interrupted build never leaves a broken book or damages an existing one.
 - **Credits** (#5): `--author` is now `--editor` (the old flag still works). The editor is credited as the book's creator, and each post's author as a contributor with a sort name ("Connor, J.D."), so reading apps don't shelve an anthology under one writer. Without an editor, post authors are the creators. For library use, `BookSpec.author` is renamed `BookSpec.editor`.
 - **No default rights statement** (#5): the hard-coded "© All rights reserved." is gone; pass `--rights` to include one.
 - **Identifier format** (#5): ISBNs are stored as `urn:isbn:…` (typed as ISBN-13 or ISBN-10); books without one get `urn:uuid:…`.

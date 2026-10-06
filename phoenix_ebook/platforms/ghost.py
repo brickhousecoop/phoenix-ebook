@@ -7,10 +7,12 @@ import hmac
 import json
 import time
 from datetime import datetime
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 
+from phoenix_ebook.errors import AuthError, PostNotFound, SourceUnreachable, explain_response
 from phoenix_ebook.models import Author, Post
 from phoenix_ebook.platforms.base import Platform, register_platform
 
@@ -21,13 +23,19 @@ def _b64url(data: bytes) -> str:
 
 def make_token(admin_key: str) -> str:
     """Sign a 5-minute Admin API JWT from an ``id:secret`` Admin API key (secret is hex)."""
-    key_id, key_secret = admin_key.strip().split(":")
+    parts = admin_key.strip().split(":")
+    try:
+        key_id, key_secret = parts
+        secret_bytes = bytes.fromhex(key_secret)
+    except ValueError:
+        raise AuthError("The Ghost Admin API key must look like id:secret (copy it from Ghost Admin → "
+                        "Settings → Integrations → your custom integration → Admin API key).") from None
     header = json.dumps({"alg": "HS256", "typ": "JWT", "kid": key_id}).encode()
     payload = json.dumps(
         {"iat": int(time.time()), "exp": int(time.time()) + 300, "aud": "/admin/"}
     ).encode()
     signing_input = f"{_b64url(header)}.{_b64url(payload)}"
-    signature = hmac.new(bytes.fromhex(key_secret), signing_input.encode(), hashlib.sha256).digest()
+    signature = hmac.new(secret_bytes, signing_input.encode(), hashlib.sha256).digest()
     return f"{signing_input}.{_b64url(signature)}"
 
 
@@ -46,16 +54,28 @@ class GhostPlatform(Platform):
 
     def fetch_post(self, session: requests.Session, url: str, secret: str, slug: str) -> Post:
         token = make_token(secret)
-        r = session.get(
-            f"{url.rstrip('/')}/ghost/api/admin/posts/slug/{slug}/",
-            params={"formats": "html"},
-            headers={"Authorization": f"Ghost {token}"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        data = r.json()
-        if data.get("errors"):
-            raise RuntimeError(data["errors"])
+        host = urlsplit(url).netloc or url
+        try:
+            r = session.get(
+                f"{url.rstrip('/')}/ghost/api/admin/posts/slug/{slug}/",
+                params={"formats": "html"},
+                headers={"Authorization": f"Ghost {token}"},
+                timeout=15,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise SourceUnreachable(f"can't reach {host}: {type(exc).__name__}. Check the --url and your "
+                                    "network connection.") from exc
+        data = _ghost_json(r)
+        if r.status_code == 404 and data is not None:
+            raise PostNotFound(host, [slug])
+        if r.status_code == 401 or (r.status_code == 403 and data is not None):
+            raise _auth_error(r, host, url)
+        if not 200 <= r.status_code < 300:
+            why = explain_response(r)
+            raise SourceUnreachable(f"can't reach {host} (HTTP {r.status_code})" + (f": {why}" if why else "")
+                                    + ("" if why else ". " + _NOT_GHOST_HINT.format(host=host)))
+        if data is None or not data.get("posts"):
+            raise SourceUnreachable(f"{host} didn't answer like a Ghost Admin API. " + _NOT_GHOST_HINT.format(host=host))
         post = data["posts"][0]
 
         authors = [
@@ -94,3 +114,30 @@ class GhostPlatform(Platform):
             except (requests.RequestException, KeyError, ValueError, ZoneInfoNotFoundError):
                 cache[url] = None  # fall back to UTC dates
         return cache[url]
+
+
+_NOT_GHOST_HINT = ("Is --url the site's Ghost address (often https://<site>.ghost.io, as shown in "
+                   "Ghost Admin), not the public website ({host})?")
+
+
+def _ghost_json(r) -> dict | None:
+    """The response's JSON object, or None if it isn't JSON (e.g. an HTML page or a proxy message)."""
+    if "json" not in (r.headers.get("Content-Type") or "").lower():
+        return None
+    try:
+        data = r.json()
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _auth_error(r, host: str, url: str) -> AuthError:
+    redirected = [h for h in getattr(r, "history", []) if 300 <= h.status_code < 400]
+    if redirected:
+        final = urlsplit(r.url)
+        return AuthError(f"{host} redirected to {final.scheme}://{final.netloc}, and the key isn't sent across "
+                         f"redirects. Use --url {final.scheme}://{final.netloc} instead.")
+    why = explain_response(r)
+    return AuthError(f"Ghost rejected the Admin API key for {host} (HTTP {r.status_code})"
+                     + (f": {why}" if why else "")
+                     + f". Check the key, or store a new one: build_epub.py --set-secret --platform ghost --url {url}")

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 import requests
 
+from phoenix_ebook.errors import InvalidBookSpec
 from phoenix_ebook.models import Post
 
 
@@ -32,7 +33,11 @@ class Platform(ABC):
         - ``published_at``: ISO 8601 in the *site's* timezone, so dates match the site
         - ``feature_image`` / ``feature_image_alt`` / ``feature_image_caption`` (HTML)
 
-        Raise on failure (e.g. ``requests.HTTPError``); a missing post stops the build.
+        On failure raise the typed errors from ``phoenix_ebook.errors``, never raw
+        ``requests`` exceptions: ``AuthError`` (credential rejected or malformed),
+        ``PostNotFound`` (the caller collects these across all slugs before stopping),
+        ``SourceUnreachable`` (network failure, or a response that isn't the platform's
+        API, e.g. a wrong site URL). Messages should say what to do next.
         """
 
 
@@ -50,4 +55,4 @@ def get_platform(name: str) -> Platform:
     try:
         return _REGISTRY[name]()
     except KeyError:
-        raise RuntimeError(f"Unknown platform: {name!r}. Registered: {sorted(_REGISTRY)}")
+        raise InvalidBookSpec(f"unknown platform {name!r}; available: {', '.join(sorted(_REGISTRY))}") from None

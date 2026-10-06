@@ -62,10 +62,17 @@ SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect wid
 # ---------------------------------------------------------------- HTTP
 
 class FakeResponse:
-    def __init__(self, status: int, body: bytes = b"", content_type: str = "application/octet-stream"):
+    def __init__(self, status: int, body: bytes = b"", content_type: str = "application/octet-stream",
+                 url: str = "", history: list | None = None):
         self.status_code = status
         self.content = body
         self.headers = {"Content-Type": content_type}
+        self.url = url
+        self.history = history or []
+
+    def json(self):
+        import json
+        return json.loads(self.content)
 
 
 class FakeSession(requests.Session):
@@ -79,8 +86,10 @@ class FakeSession(requests.Session):
         super().__init__()
         self.routes = routes or {}
         self.calls: dict[str, int] = {}
+        self.log: list[tuple[str, dict]] = []  # every request, in order
 
     def get(self, url, **kwargs):
+        self.log.append((url, kwargs))
         self.calls[url] = self.calls.get(url, 0) + 1
         outcomes = self.routes[url]
         outcome = outcomes[min(self.calls[url], len(outcomes)) - 1]

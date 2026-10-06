@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 import requests
 from PIL import Image, ImageOps
 
+from phoenix_ebook.errors import explain_response
+
 
 DEFAULT_MAX_WIDTH = 1100
 DEFAULT_QUALITY = 85
@@ -70,7 +72,8 @@ def fetch_image(
             if 200 <= resp.status_code < 300:
                 content_type = resp.headers.get("Content-Type", "unknown")
                 return resp.content, content_type
-            reason = f"HTTP {resp.status_code}"
+            why = explain_response(resp)
+            reason = f"HTTP {resp.status_code}" + (f": {why}" if why else "")
             transient = resp.status_code >= 500 or resp.status_code == 429
         if not transient or attempt == 2:
             raise ImageFetchError(reason)

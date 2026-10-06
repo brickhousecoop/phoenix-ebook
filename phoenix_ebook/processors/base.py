@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from bs4 import BeautifulSoup, Comment, NavigableString
 
+from phoenix_ebook.errors import InvalidBookSpec
 from phoenix_ebook.models import Post
 
 
@@ -100,7 +101,7 @@ def get_processor(name: str) -> HtmlProcessor:
     try:
         return _REGISTRY[name]()
     except KeyError:
-        raise RuntimeError(f"Unknown processor: {name!r}. Registered: {sorted(_REGISTRY)}")
+        raise InvalidBookSpec(f"unknown processor {name!r}; available: {', '.join(sorted(_REGISTRY))}") from None
 
 
 register_processor(GenericProcessor)

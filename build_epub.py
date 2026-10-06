@@ -6,6 +6,7 @@ import argparse
 import getpass
 import os
 import sys
+import traceback
 from pathlib import Path
 
 try:
@@ -16,7 +17,8 @@ except ImportError:
 import requests
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
-from phoenix_ebook.epub_builder import InvalidBookSpec, build, validate_spec
+from phoenix_ebook.epub_builder import build, validate_spec
+from phoenix_ebook.errors import InvalidBookSpec, ManifestError, PhoenixError, PostNotFound
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
@@ -78,8 +80,15 @@ def _spec_from_args(args) -> BookSpec:
 
 def _spec_from_manifest(path: str) -> BookSpec:
     if tomllib is None:
-        raise RuntimeError("TOML manifest requires Python 3.11+ (tomllib)")
-    data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+        raise ManifestError("TOML manifests need Python 3.11 or newer")
+    try:
+        data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise ManifestError(f"manifest not found: {path}") from None
+    except UnicodeDecodeError:
+        raise ManifestError(f"{path} isn't UTF-8 text; save it as UTF-8") from None
+    except tomllib.TOMLDecodeError as exc:
+        raise ManifestError(f"{path} isn't valid TOML: {exc}") from None
 
     book = data.get("book", {})
     source_data = data.get("source", {})
@@ -88,6 +97,9 @@ def _spec_from_manifest(path: str) -> BookSpec:
     style = data.get("style", {})
     slugs = data.get("posts") or source_data.get("slugs") or []
 
+    if not source_data.get("platform") or not source_data.get("url"):
+        raise ManifestError(f'{path}: a [source] table with platform and url is required, e.g.\n'
+                            '  [source]\n  platform = "ghost"\n  url = "https://<site>.ghost.io"')
     source = SourceSpec(
         platform=source_data["platform"],
         url=source_data["url"],
@@ -138,10 +150,16 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     processor = get_processor(spec.source.processor)
 
     session = requests.Session()
-    posts = [
-        platform.fetch_post(session, spec.source.url, secret, slug)
-        for slug in spec.source.slugs
-    ]
+    # Try every slug so all typos are reported at once; other errors stop at once.
+    posts, missing, site = [], [], spec.source.url
+    for slug in spec.source.slugs:
+        try:
+            posts.append(platform.fetch_post(session, spec.source.url, secret, slug))
+        except PostNotFound as exc:
+            missing.extend(exc.slugs)
+            site = exc.site
+    if missing:
+        raise PostNotFound(site, missing)
 
     result = build(spec, posts, processor, session=session, image_base_url=spec.source.url)
     print(f"wrote {result.path}")
@@ -187,7 +205,7 @@ def _report_problems(problems) -> None:
 
 def _cmd_set_secret(args, *, prefer_keyring: bool) -> None:
     if not args.url and not args.domain:
-        raise RuntimeError("Provide --url or --domain")
+        raise PhoenixError("--set-secret needs --url (the site) or --domain")
     domain = extract_domain(args.url) if args.url else args.domain
 
     secret = os.environ.get("PHOENIX_SET_SECRET_VALUE") or getpass.getpass(
@@ -250,6 +268,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Embed post images exactly as downloaded (no resizing or conversion)")
 
     parser.add_argument("--output", default="book.epub", help="Output EPUB path")
+    parser.add_argument("--debug", action="store_true", help="Show full tracebacks for errors")
     parser.add_argument("slugs", nargs="*", help="Post slugs to include")
     return parser
 
@@ -259,21 +278,26 @@ def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.set_secret_file:
-        _cmd_set_secret(args, prefer_keyring=False)
-        return
-    if args.set_secret:
-        _cmd_set_secret(args, prefer_keyring=True)
-        return
-
-    if not args.manifest and not args.slugs:
-        parser.error("provide post slugs or use --manifest")
     try:
+        if args.set_secret_file or args.set_secret:
+            _cmd_set_secret(args, prefer_keyring=args.set_secret and not args.set_secret_file)
+            return
+        if not args.manifest and not args.slugs:
+            parser.error("provide post slugs or use --manifest")
         spec = _spec_from_manifest(args.manifest) if args.manifest else _spec_from_args(args)
         _run_build(spec, override_secret=args.admin_key)
-    except InvalidBookSpec as exc:
+    except PhoenixError as exc:
+        if args.debug:
+            traceback.print_exc()
         sys.exit(f"error: {exc}")
-
+    except KeyboardInterrupt:
+        print("interrupted", file=sys.stderr)
+        sys.exit(130)
+    except Exception:
+        traceback.print_exc()
+        print("error: unexpected failure, which is a bug in phoenix-ebook. "
+              "Please report it with the traceback above.", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

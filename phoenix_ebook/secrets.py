@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+from phoenix_ebook.errors import MissingSecret
+
 try:
     import keyring
 except ImportError:
@@ -117,7 +119,7 @@ class SecretStore:
             except Exception as e:
                 print(f"keyring read failed: {e}", file=sys.stderr)
 
-        raise RuntimeError(
+        raise MissingSecret(
             f"No secret found for platform={platform!r} domain={domain!r}.\n"
             f"Options:\n"
             f"  1. Pass the secret directly (CLI --admin-key or SecretStore(override=...))\n"

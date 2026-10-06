@@ -51,7 +51,7 @@ SPEC_FLAGS = [
 ]
 
 # Flags handled by main() rather than mapped into the spec; each has a test below.
-MAIN_FLAGS = {"--set-secret", "--set-secret-file", "--domain", "--admin-key", "--manifest"}
+MAIN_FLAGS = {"--set-secret", "--set-secret-file", "--domain", "--admin-key", "--manifest", "--debug"}
 
 
 @pytest.mark.parametrize("flag, value, check", SPEC_FLAGS, ids=[f[0] for f in SPEC_FLAGS])

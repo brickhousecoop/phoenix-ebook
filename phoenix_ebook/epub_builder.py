@@ -19,6 +19,7 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
+from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
 from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
 from phoenix_ebook.processors.base import HtmlProcessor
@@ -146,14 +147,6 @@ class _Writer(epub.EpubWriter):
         return nav.replace(b'<nav epub:type="landmarks">', b'<nav epub:type="landmarks" hidden="hidden">')
 
 
-class InvalidBookSpec(ValueError):
-    """The BookSpec can't be built as given (the message says why)."""
-
-
-class MissingContentFile(InvalidBookSpec):
-    """A content-file option names a path that doesn't exist."""
-
-
 # BookSpec field -> how the user spelled it, for error messages.
 CONTENT_FILE_OPTIONS = {
     "cover": "--cover / [content] cover",
@@ -166,6 +159,29 @@ CONTENT_FILE_OPTIONS = {
     "about_file": "--about-file / [content] about_file",
     "css": "--css / [style] css",
 }
+
+
+def _write_atomically(output: str, book) -> None:
+    """Write to a temporary file next to ``output``, then rename it into place.
+
+    An interrupted or failed write never leaves a half-written book, and an
+    existing file at ``output`` is only replaced by a complete one.
+    """
+    out = Path(output)
+    tmp = out.with_name(f".{out.name}.{os.getpid()}.tmp")
+    try:
+        # No page list: our books have no print page numbers, and ebooklib would treat
+        # every element with both epub:type and id (e.g. each chapter's <section>) as
+        # a page break, producing a bogus "page list" that reading apps show.
+        writer = _Writer(str(tmp), book, {"epub3_pages": False})
+        writer.process()
+        writer.write()
+        os.replace(tmp, out)
+    except OSError as exc:
+        raise OutputError(f"can't write {output}: {exc.strerror or exc}") from exc
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def validate_spec(spec: BookSpec) -> None:
@@ -182,6 +198,17 @@ def validate_spec(spec: BookSpec) -> None:
     if spec.issn and normalize_issn(spec.issn) is None:
         raise InvalidBookSpec(f"--issn / [book] issn: {spec.issn!r} is not a valid ISSN")
     check_content_files(spec)
+    _check_output_path(spec.output)
+
+
+def _check_output_path(output: str) -> None:
+    folder = Path(output).resolve().parent
+    if not folder.is_dir():
+        raise OutputError(f"can't write {output}: the folder {folder} doesn't exist")
+    if not os.access(folder, os.W_OK):
+        raise OutputError(f"can't write {output}: no permission to write in {folder}")
+    if Path(output).is_dir():
+        raise OutputError(f"can't write {output}: it's a folder; give a file name ending in .epub")
 
 
 def check_content_files(spec: BookSpec) -> None:
@@ -193,6 +220,12 @@ def check_content_files(spec: BookSpec) -> None:
         path = getattr(spec, field)
         if path and not Path(path).is_file():
             raise MissingContentFile(f"{option}: file not found: {path}")
+        if path and field not in ("cover",):
+            try:
+                Path(path).read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                raise InvalidBookSpec(f"{option}: {path} isn't UTF-8 text; save it as UTF-8 "
+                                      "(most editors offer this under 'Save As' or 'Encoding')") from None
 
 
 def _remove_image(img) -> None:
@@ -703,10 +736,5 @@ def build(
 
     _add_accessibility_metadata(book, spec, image_tally, has_animation)
 
-    # No page list: our books have no print page numbers, and ebooklib would treat
-    # every element with both epub:type and id (e.g. each chapter's <section>) as
-    # a page break, producing a bogus "page list" that reading apps show.
-    writer = _Writer(spec.output, book, {"epub3_pages": False})
-    writer.process()
-    writer.write()
+    _write_atomically(spec.output, book)
     return BuildResult(path=spec.output, problems=problems)
