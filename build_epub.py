@@ -102,6 +102,7 @@ def _spec_from_manifest(path: str) -> BookSpec:
         series_number=str(book["series_number"]) if "series_number" in book else None,
         issn=book.get("issn"),
         rights=book.get("rights"),
+        accessibility_summary=book.get("accessibility_summary"),
         sort_names=dict(data.get("sort_names", {})),
         alt_text=dict(data.get("alt_text", {})),
         publisher=book.get("publisher"),

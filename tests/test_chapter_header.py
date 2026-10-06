@@ -43,8 +43,8 @@ def test_header_structure_and_order(build_book):
              published_at="2026-08-24T20:04:00-04:00", feature_image=U + "f.png", feature_image_caption="Cap")
     chapter = build_book(p, {U + "f.png": [ok(png())]}).chapter()
     body = chapter.split('<body epub:type="bodymatter">')[1]
-    assert re.search(r'<article id="article-1" epub:type="chapter">\s*<header>', body)
-    assert re.search(r"</article>\s*</body>\s*</html>\s*$", body)  # article wraps everything
+    assert re.search(r'<section id="chapter-1" epub:type="chapter" role="doc-chapter">\s*<header>', body)
+    assert re.search(r"</section>\s*</body>\s*</html>\s*$", body)  # the chapter section wraps everything
     header = re.search(r"<header>.*?</header>", body, re.S).group(0)
     order = re.findall(r'class="date"|<h2>|class="byline"|<figure>', header)
     assert order == ['class="date"', "<h2>", 'class="byline"', "<figure>"]
@@ -66,7 +66,7 @@ def test_bare_post_header_is_just_the_title(build_book):
 
 def test_chapters_are_numbered(build_book):
     book = build_book([post(slug="one"), post(slug="two")])
-    assert '<article id="article-2" epub:type="chapter">' in book.chapter("two")
+    assert '<section id="chapter-2" epub:type="chapter" role="doc-chapter">' in book.chapter("two")
 
 
 def test_failed_feature_image_leaves_header_without_figure(build_book):

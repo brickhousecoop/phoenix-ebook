@@ -105,7 +105,7 @@ def test_generated_pages_are_glued(build_book):
 def test_visible_text_otherwise_unchanged(build_book):
     html = "<p>One—two… three — four.</p><blockquote><p>Q—uote</p></blockquote>"
     chapter = build_book(post(html)).chapter()
-    text = BeautifulSoup(chapter, "html.parser").find("article").get_text().replace(FEFF, "")
+    text = BeautifulSoup(chapter, "html.parser").find("section").get_text().replace(FEFF, "")
     assert "One—two… three — four." in text and "Q—uote" in text
 
 

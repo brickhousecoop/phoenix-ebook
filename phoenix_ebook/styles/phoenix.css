@@ -57,18 +57,18 @@ section[epub|type~="halftitlepage"] p.title{
 
 /* ---- Chapter header: date, title, byline, feature image ---- */
 
-article > header p.date,
-article > header p.byline{
+section[epub|type~="chapter"] > header p.date,
+section[epub|type~="chapter"] > header p.byline{
 	font-variant: small-caps;
 	margin: 0;
 	text-indent: 0;
 }
 
-article > header h2{
+section[epub|type~="chapter"] > header h2{
 	margin: 1em 0;
 }
 
-article > header p.byline{
+section[epub|type~="chapter"] > header p.byline{
 	margin-bottom: 1.5em;
 }
 

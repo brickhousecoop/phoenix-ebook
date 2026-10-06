@@ -30,7 +30,7 @@ _Avoid_: Spacer, ornament image
 
 **Chapter**:
 A post's page in the book. A book's chapters are its posts, in the order given.
-_Avoid_: Article (that is only the HTML element a chapter is wrapped in), section
+_Avoid_: Article, section (those are only HTML element names)
 
 **Reading order**:
 The fixed sequence of pages a reader moves through: title page, copyright, imprint, contents page, foreword, introduction, half-title page, chapters, notes, acknowledgements, "About This Book".

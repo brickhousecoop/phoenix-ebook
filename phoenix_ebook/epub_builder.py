@@ -7,6 +7,7 @@ import io
 import os
 import re
 import uuid
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -89,9 +90,20 @@ def _glue_soup(soup) -> None:
             text.replace_with(glued)
 
 
+# epub:type -> matching DPUB-ARIA role, for screen readers (per DAISY Ace's
+# epub-type-has-matching-role). Types not listed have no ARIA counterpart.
+ARIA_ROLES = {
+    "chapter": "doc-chapter",
+    "foreword": "doc-foreword",
+    "introduction": "doc-introduction",
+    "acknowledgments": "doc-acknowledgments",
+}
+
+
 def _section(role: str, content: str) -> str:
     """Wrap content (e.g. a user's content file) in a section with a specific role, unmodified."""
-    return f'<section epub:type="{role}">\n{content}\n</section>'
+    aria = f' role="{ARIA_ROLES[role]}"' if role in ARIA_ROLES else ""
+    return f'<section epub:type="{role}"{aria}>\n{content}\n</section>'
 
 
 def _add_page(book, styles, title, file_name, content, lang, part=None):
@@ -115,12 +127,17 @@ def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool) -
 
 
 class _Writer(epub.EpubWriter):
-    """ebooklib's writer, with two fixes to the landmarks nav it generates:
+    """ebooklib's writer, with xml:lang on the OPF <package>, and two fixes to the
+    landmarks nav it generates:
 
     - EPUB 3 landmark terms where ebooklib reuses EPUB 2 guide types;
     - ``hidden``, so the landmarks list (meant for reading apps) doesn't render on
       the contents page, which is in the reading order.
     """
+
+    def _write_opf_metadata(self, root):
+        root.set("{http://www.w3.org/XML/1998/namespace}lang", self.book.language)  # Ace: epub-lang
+        super()._write_opf_metadata(root)
 
     def _get_nav(self, item):
         nav = super()._get_nav(item)
@@ -215,7 +232,7 @@ def _byline(authors: list[Author]) -> str | None:
     return f"By {joined}"
 
 
-def _article_header(post: Post, feature_figure: str) -> str:
+def _chapter_header(post: Post, feature_figure: str) -> str:
     parts = ["<header>"]
     if date := _format_date(post.published_at):
         parts.append(f'<p class="date">{date}</p>')
@@ -352,8 +369,64 @@ def _half_title_page(spec: BookSpec) -> str:
             f'<p class="title">{glue(html.escape(spec.title))}</p>\n{subtitle}</section>')
 
 
+def _is_animated(data: bytes) -> bool:
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            return bool(getattr(img, "is_animated", False))
+    except Exception:
+        return False
+
+
+def _add_accessibility_metadata(book, spec: BookSpec, tally: Counter, has_animation: bool) -> None:
+    """schema.org accessibility metadata, computed from what the book actually contains.
+
+    Makes no conformance claim: every statement is something the build verified.
+    Reading apps such as Thorium show these in their book-info dialog.
+    """
+    images, missing = tally["images"], tally["missing"]
+    all_images_have_alt = images > 0 and missing == 0
+
+    def schema(prop: str, value: str) -> None:
+        book.add_metadata(None, "meta", value, {"property": f"schema:{prop}"})
+
+    schema("accessMode", "textual")
+    if images:
+        schema("accessMode", "visual")
+    if not images or all_images_have_alt:
+        schema("accessModeSufficient", "textual")
+    if images:
+        schema("accessModeSufficient", "textual,visual")
+
+    features = ["tableOfContents", "readingOrder", "structuralNavigation", "displayTransformability"]
+    if all_images_have_alt:
+        features.append("alternativeText")
+    for feature in features:
+        schema("accessibilityFeature", feature)
+
+    if has_animation:
+        for hazard in ("unknownFlashingHazard", "noMotionSimulationHazard", "noSoundHazard"):
+            schema("accessibilityHazard", hazard)
+    else:
+        schema("accessibilityHazard", "none")
+
+    schema("accessibilitySummary", spec.accessibility_summary or _accessibility_summary(tally))
+
+
+def _accessibility_summary(tally: Counter) -> str:
+    parts = ["Includes a table of contents and structural navigation.",
+             "Text can be resized and the reader's own font is used."]
+    images = tally["images"]
+    if images:
+        described, decorative = tally["described"], tally["decorative"]
+        line = f"{described} of {images} images have text descriptions"
+        if decorative:
+            line += f"; {decorative} {'is' if decorative == 1 else 'are'} decorative"
+        parts.append(line + ".")
+    return " ".join(parts)
+
+
 def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: dict[str, str],
-                    used: set[str], problems: list[BuildProblem]) -> None:
+                    used: set[str], problems: list[BuildProblem], tally: Counter) -> None:
     """Apply alt-text overrides and report missing or suspicious alt text.
 
     Runs after image handling, so failed images are gone and ``src`` is the
@@ -368,15 +441,20 @@ def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: d
         caption = caption_tag.get_text(" ", strip=True) if caption_tag else None
         where = dict(post_slug=post.slug, url=url, location=f"image {position} of {len(images)}", caption=caption)
 
+        tally["images"] += 1
         if key in overrides:
             img["alt"] = overrides[key]  # "" marks a decorative image
             used.add(key)
+            tally["described" if overrides[key].strip() else "decorative"] += 1
             continue
         alt = img.get("alt")
         if alt is None or not alt.strip():
             img["alt"] = ""
+            tally["missing"] += 1
             problems.append(BuildProblem(kind="image-missing-alt", detail="no alt text", **where))
-        elif reason := suspicious_alt(alt, caption):
+            continue
+        tally["described"] += 1
+        if reason := suspicious_alt(alt, caption):
             problems.append(BuildProblem(kind="image-suspicious-alt", detail=reason, **where))
 
 
@@ -443,6 +521,8 @@ def build(
     local_to_url: dict[str, str] = {}  # embedded image path -> original URL
     alt_overrides = {normalize_image_url(url): alt for url, alt in spec.alt_text.items()}
     used_overrides: set[str] = set()
+    image_tally: Counter = Counter()  # images / described / decorative / missing, for accessibility metadata
+    has_animation = False
     problems: list[BuildProblem] = []
 
     # ---- Cover (metadata only: no cover page, see #6) ----
@@ -529,6 +609,7 @@ def build(
                         data, ext, size = optimize_image(
                             data, ext, max_width=spec.image_max_width, quality=spec.image_quality
                         )
+                    has_animation = has_animation or _is_animated(data)
                     fname = f"{chapter_slug}_{uid}{ext}"
                     item = epub.EpubItem(
                         uid=f"img_{uid}",
@@ -557,7 +638,7 @@ def build(
             img.attrs.pop("srcset", None)
             img.attrs.pop("sizes", None)
 
-        _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems)
+        _check_alt_text(soup, post, local_to_url, alt_overrides, used_overrides, problems, image_tally)
         _glue_soup(soup)
 
         feature = soup.find("figure", attrs={FEATURE_MARK: True})
@@ -568,8 +649,10 @@ def build(
         body_content = soup.body.decode_contents() if soup.body else str(soup)
         chapters.append(_add_page(
             book, styles, post.title, f"{chapter_slug}.xhtml",
-            f'<article id="article-{chapter_number}" epub:type="chapter">\n'
-            f"{_article_header(post, feature_html)}\n{body_content}\n</article>",
+            # <section>, not <article>: HTML only allows role="doc-chapter" on <section> (epubcheck),
+            # and Ace wants that role wherever epub:type="chapter" appears.
+            f'<section id="chapter-{chapter_number}" epub:type="chapter" role="doc-chapter">\n'
+            f"{_chapter_header(post, feature_html)}\n{body_content}\n</section>",
             spec.lang, part="bodymatter",
         ))
 
@@ -618,8 +701,10 @@ def build(
     if chapters:
         book.guide.append({"type": "text", "title": "Start", "href": chapters[0].file_name})
 
+    _add_accessibility_metadata(book, spec, image_tally, has_animation)
+
     # No page list: our books have no print page numbers, and ebooklib would treat
-    # every element with both epub:type and id (e.g. each chapter's <article>) as
+    # every element with both epub:type and id (e.g. each chapter's <section>) as
     # a page break, producing a bogus "page list" that reading apps show.
     writer = _Writer(spec.output, book, {"epub3_pages": False})
     writer.process()

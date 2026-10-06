@@ -74,6 +74,7 @@ class BookSpec:
     css: str | None = None  # user stylesheet, linked after the built-in ones
     sort_names: dict[str, str] = field(default_factory=dict)  # name -> "Last, First" overrides
     alt_text: dict[str, str] = field(default_factory=dict)  # image URL -> alt text ("" = decorative)
+    accessibility_summary: str | None = None  # replaces the generated summary
 
     optimize_images: bool = True
     image_max_width: int = DEFAULT_MAX_WIDTH  # 0 = no resizing

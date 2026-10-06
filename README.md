@@ -185,6 +185,12 @@ Entries here win over the alt text from the site, and match the image whatever s
 
 Writing good alt text: describe what the image contributes in context, briefly; don't start with "Image of". If the image contains text (a comic's speech bubbles, a screenshot of a post or document), include the text.
 
+### Accessibility
+
+Each book declares accessibility metadata (shown, for example, in Thorium's book-info dialog), **computed from what the book actually contains**: how it can be read (text, plus images when present), its features (table of contents, structural navigation, resizable text with the reader's own font, and *text descriptions for images* only once every image has alt text or is marked decorative), possible hazards (none, or an unknown flashing hazard if an animated GIF is included), and a one-sentence summary such as "31 of 38 images have text descriptions." Replace the summary with your own wording via `accessibility_summary` under `[book]` in a manifest.
+
+Books make **no WCAG conformance claim**: that's a promise that someone has reviewed the book against the standard, which a build can't do. Pages also carry ARIA roles (chapters, foreword, introduction, acknowledgments) so screen readers can navigate by section.
+
 ### Styling
 
 Books use [Standard Ebooks](https://standardebooks.org)' `core.css` (a public-domain stylesheet tuned for reading apps) plus phoenix-ebook's own styles for its pages: a centered title page, chapter headers with the date and byline in small caps, figures kept on one screen together with their captions, and book-style indented paragraphs. No font is set, so the reader's own font and size settings always apply.
@@ -245,6 +251,13 @@ for problem in result.problems:   # e.g. images that couldn't be downloaded
 uv pip install --python .venv/bin/python -r requirements-dev.txt   # adds pytest
 .venv/bin/python scripts/fetch_epubcheck.py                         # optional: pinned epubcheck into .tools/
 .venv/bin/python -m pytest
+```
+
+To check a built book with [DAISY Ace](https://daisy.github.io/ace/), the standard EPUB accessibility checker (needs Node.js and a headless Chrome; the desktop Ace App is the easy alternative):
+
+```bash
+npm install @daisy/ace
+PUPPETEER_EXECUTABLE_PATH=/path/to/chrome npx ace-puppeteer --outdir ace-report book.epub   # opens as ace-report/report.html
 ```
 
 The suite runs offline (no network, no API key). The epubcheck tests need Java and the downloaded validator; without them they are skipped, not failed.
