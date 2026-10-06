@@ -175,3 +175,16 @@ figure.card img.thumbnail{
 	max-height: 12em;
 	width: auto;
 }
+
+/* ---- Section bylines in posts (e.g. Flaming Hydra digests): like the chapter header's ---- */
+
+section[epub|type~="chapter"] p.byline{
+	font-variant: small-caps;
+	margin: 0 0 1.5em;
+	text-align: center;
+	text-indent: 0;
+}
+
+p.byline + p{
+	text-indent: 0;
+}

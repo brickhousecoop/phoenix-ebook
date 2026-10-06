@@ -5,7 +5,7 @@ import re
 
 from bs4 import BeautifulSoup, NavigableString
 
-from phoenix_ebook.canonical import CALL_TO_ACTION, CALL_TO_ACTION_BANNER, mark_call_to_action
+from phoenix_ebook.canonical import CALL_TO_ACTION, CALL_TO_ACTION_BANNER, FEATURE_IMAGE, mark_call_to_action
 
 from phoenix_ebook.models import Post
 from phoenix_ebook.processors.base import HtmlProcessor, register_processor
@@ -15,7 +15,8 @@ from phoenix_ebook.processors.base import HtmlProcessor, register_processor
 class FlamingHydraProcessor(HtmlProcessor):
     """Flaming Hydra: drops the comments footer and website calls-to-action (trailing
     subscribe banners; subscribe, share and shop buttons; subscribe links are unwrapped),
-    and labels contents entries "Title — Author"."""
+    turns "by …" headings into byline paragraphs (dropping one that repeats the chapter
+    header's), and labels contents entries "Title — Author"."""
 
     name = "flaminghydra"
     platform = "ghost"
@@ -43,6 +44,7 @@ class FlamingHydraProcessor(HtmlProcessor):
                     hr.decompose()
                     break
         _remove_calls_to_action(soup)
+        _convert_bylines(soup, post)
 
 
 # Website calls-to-action (#20). A book can't subscribe, share or shop.
@@ -124,3 +126,43 @@ def _drop_dangling_end(soup) -> None:
             block.decompose()
         else:
             break
+
+
+# "by …" bylines written as headings (#22): <h4><em>by</em> Name</h4> after a section's heading.
+_BYLINE = re.compile(r"^by\s+\S", re.I)
+_NAME_SEPARATORS = re.compile(r"\s*,\s*|\s+and\s+|\s*&\s*", re.I)
+
+
+def _names(text: str) -> set[str]:
+    return {" ".join(n.split()).casefold() for n in _NAME_SEPARATORS.split(text) if n.strip()}
+
+
+def _is_top(block) -> bool:
+    """Nothing but the feature image, rules or empty paragraphs before ``block``."""
+    previous = _previous_block(block)
+    while previous is not None and (_is_filler(previous) or previous.has_attr(FEATURE_IMAGE)):
+        previous = _previous_block(previous)
+    return previous is None
+
+
+def _convert_bylines(soup, post: Post) -> None:
+    for heading in soup.find_all(["h3", "h4"]):
+        text = " ".join(heading.get_text(" ", strip=True).split())
+        if not _BYLINE.match(text):
+            continue
+        previous = _previous_block(heading)
+        while previous is not None and _is_filler(previous):
+            previous = _previous_block(previous)
+        top = _is_top(heading)
+        first = heading.find(True)
+        italic_by = first is not None and first.name in ("em", "i") and first.get_text(strip=True).casefold() == "by"
+        if not (top or italic_by or (previous is not None and previous.name in ("h1", "h2", "h3", "h4", "h5", "h6"))):
+            continue  # a heading that happens to start with "By": not a byline
+        if top and post.authors and _names(text[2:]) == _names(", ".join(a.name for a in post.authors)):
+            heading.decompose()  # repeats the chapter header's byline
+            continue
+        byline = soup.new_tag("p", attrs={"class": "byline"})
+        if heading.get("id"):
+            byline["id"] = heading["id"]
+        byline.extend(list(heading.contents))
+        heading.replace_with(byline)

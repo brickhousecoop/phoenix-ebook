@@ -73,6 +73,18 @@ When a layer removes a website call-to-action **link** but keeps its words, it m
 
 Use `phoenix_ebook.canonical.mark_call_to_action`. Ghost marks dead `#/portal/…` links; Flaming Hydra marks its `/subscribe` links and mid-post banners.
 
+## Changed links
+
+The shared cleanup (`phoenix_ebook/links.py`, run by every processor) marks each link it changes, so the builder can report it; the builder then removes the markers:
+
+```html
+<a href="#polar-impressions" data-link-repaired="#polar-impresions" data-link-reason="matched the heading …">…</a>
+<span data-link-unlinked="#gone" data-link-reason="points to a section that isn't in this post">words kept</span>
+<span data-link-removed="https://example.org/x"></span>   <!-- where a link with no text was -->
+```
+
+Section ids are plain ASCII (`día-de-los-muertos` → `dia-de-los-muertos`); links to a renamed id follow it and are reported as repaired.
+
 ## Not platform-specific
 
 These are produced from the `Post` fields by the builder, not by platforms: the chapter header (date, title, byline, feature image figure; from `published_at`, `title`, `authors`, `feature_image*`).

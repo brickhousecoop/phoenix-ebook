@@ -194,6 +194,14 @@ def _report_problems(problems) -> None:
     if n := count("embed-unknown"):
         print(f"{n} unrecognised {plural(n, 'embed', 'embeds')} became {plural(n, 'a link card', 'link cards')}; "
               "see warnings above", file=sys.stderr)
+    if n := count("link-repaired"):
+        print(f"{n} {plural(n, 'link', 'links')} in posts {plural(n, 'was', 'were')} repaired; "
+              "check the warnings above", file=sys.stderr)
+    if n := count("link-unlinked"):
+        print(f"{n} {plural(n, 'link', 'links')} in posts pointed nowhere and {plural(n, 'was', 'were')} unlinked "
+              "(words kept); see warnings above", file=sys.stderr)
+    if n := count("link-empty-removed"):
+        print(f"{n} empty {plural(n, 'link was', 'links were')} removed; see warnings above", file=sys.stderr)
     if n := count("alt-override-unused"):
         print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
 

@@ -1,6 +1,9 @@
 """Helpers for the canonical chapter HTML forms that more than one layer writes (docs/canonical-html.md)."""
 from __future__ import annotations
 
+# On the post's feature image <figure>, which the builder puts first in the post before processing.
+FEATURE_IMAGE = "data-feature-image"
+
 # Words of a removed call-to-action link, kept for the reader and reported by the builder.
 CALL_TO_ACTION = "data-call-to-action"
 # A promotional image kept because it isn't at the end of the post (it may be content); reported.
@@ -30,3 +33,13 @@ EMBED_REMOVED = "data-embed-removed"
 # On a card made from an embed nobody recognised; the value is its source URL. Reported.
 EMBED_UNKNOWN = "data-embed-unknown"
 EMBED_SRC = "data-embed-src"
+
+# ---- Changed links (#22): every link the build repairs, unlinks or removes is reported ----
+
+# On a repaired <a>: its original href, and why it changed.
+LINK_REPAIRED = "data-link-repaired"
+LINK_REASON = "data-link-reason"
+# On a <span> holding the words of a link that pointed nowhere (the link is gone): its href.
+LINK_UNLINKED = "data-link-unlinked"
+# An empty <span> where a link with no text was: its href.
+LINK_REMOVED = "data-link-removed"

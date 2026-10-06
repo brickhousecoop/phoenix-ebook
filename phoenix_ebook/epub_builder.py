@@ -20,7 +20,9 @@ from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
-                                     EMBED_SRC, EMBED_UNKNOWN, OEMBED_TEXT, THUMBNAIL_FALLBACK, THUMBNAIL_LOOKUP)
+                                     EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
+                                     LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
+                                     THUMBNAIL_LOOKUP)
 from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
@@ -245,7 +247,7 @@ def _remove_image(img) -> None:
         figure.decompose()  # a link card stays: its text and link still work without the picture
 
 
-FEATURE_MARK = "data-feature-image"
+FEATURE_MARK = FEATURE_IMAGE
 def _byline(authors: list[Author]) -> str | None:
     if not authors:
         return None
@@ -425,6 +427,28 @@ def _report_calls_to_action(soup, post: Post, problems: list[BuildProblem]) -> N
                                      detail="promotional image kept (not at the end of the post)"
                                             + (f": \"{text[:200]}\"" if text else "")))
         del figure[CALL_TO_ACTION_BANNER]
+
+
+def _report_link_changes(soup, post: Post, problems: list[BuildProblem]) -> None:
+    """Report and unmark every link the cleanup repaired, unlinked or removed (#22)."""
+    def words(tag) -> str:
+        return " ".join(tag.get_text().split())[:120]
+
+    for link in soup.find_all("a", attrs={LINK_REPAIRED: True}):
+        problems.append(BuildProblem(kind="link-repaired", post_slug=post.slug, url=link[LINK_REPAIRED],
+                                     detail=f"\"{words(link)}\": now {link['href']} "
+                                            f"({link.get(LINK_REASON, 'repaired')})"))
+        del link[LINK_REPAIRED]
+        link.attrs.pop(LINK_REASON, None)
+    for span in soup.find_all("span", attrs={LINK_UNLINKED: True}):
+        problems.append(BuildProblem(kind="link-unlinked", post_slug=post.slug, url=span[LINK_UNLINKED],
+                                     detail=f"\"{words(span)}\": link removed, words kept "
+                                            f"({span.get(LINK_REASON, 'broken')})"))
+        span.unwrap()
+    for span in soup.find_all("span", attrs={LINK_REMOVED: True}):
+        problems.append(BuildProblem(kind="link-empty-removed", post_slug=post.slug, url=span[LINK_REMOVED],
+                                     detail="a link with no text was removed"))
+        span.unwrap()
 
 
 def _report_embeds(soup, post: Post, problems: list[BuildProblem]) -> None:
@@ -701,6 +725,7 @@ def build(
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
         _report_embeds(soup, post, problems)
+        _report_link_changes(soup, post, problems)
         _lookup_thumbnails(soup, post, session, oembed_answers, problems)
 
         def load(src: str) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 from bs4 import BeautifulSoup, Comment, NavigableString
 
 from phoenix_ebook.errors import InvalidBookSpec
+from phoenix_ebook.links import remove_empty_headings_and_ids, repair_links
 from phoenix_ebook.models import Post
 
 
@@ -79,11 +80,15 @@ class HtmlProcessor:
 
         Receives canonical chapter HTML. Runs before images are fetched. Overrides
         must call ``super().clean()`` first: this base implementation removes
-        scripts/iframes/styles and web-only markup (inline styles, comments, …).
+        scripts/iframes/styles and web-only markup (inline styles, comments, …),
+        empty headings and ids, and repairs or unlinks broken links (marking each
+        changed link for the build report; see ``phoenix_ebook.links``).
         """
         for tag in soup.find_all(["script", "iframe", "style"]):
             tag.decompose()
         _strip_web_markup(soup)
+        remove_empty_headings_and_ids(soup)
+        repair_links(soup)
 
 
 class GenericProcessor(HtmlProcessor):
