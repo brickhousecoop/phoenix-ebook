@@ -160,6 +160,8 @@ Each chapter opens with a header: the post's publication date (in the site's tim
 
 Footnotes in posts (Ghost's Markdown card) become notes at the end of their chapter, with a "Notes" heading; tapping a note number opens the note in a pop-up in reading apps that support it, such as Thorium.
 
+Website calls-to-action are taken out of Flaming Hydra books: subscribe banners at the end of posts, and subscribe, support, share and shop buttons. Subscribe or sign-up links inside sentences keep their words but lose the (dead) link, and each such paragraph, plus any promotional image kept because it's mid-post, is listed after the build for review.
+
 Content files are HTML fragments, inserted as-is; start them with an `<h2>` heading (the title page holds the book's `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
 ### Images

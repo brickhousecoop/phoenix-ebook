@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 from bs4 import BeautifulSoup
 
+from phoenix_ebook.canonical import mark_call_to_action
 from phoenix_ebook.errors import AuthError, PostNotFound, SourceUnreachable, explain_response
 from phoenix_ebook.models import Author, Post
 from phoenix_ebook.platforms.base import Platform, register_platform
@@ -55,12 +56,15 @@ class GhostPlatform(Platform):
     def normalize_html(self, html: str) -> str:
         """Ghost's dialect -> canonical chapter HTML (docs/canonical-html.md).
 
-        Drops the editor's ``kg-*`` card classes and converts Markdown-card
-        (markdown-it) footnotes to canonical notes.
+        Converts button cards to canonical buttons, removes or unlinks Ghost
+        "portal" links (dead outside the website), drops the editor's ``kg-*``
+        card classes, and converts Markdown-card (markdown-it) footnotes to
+        canonical notes.
         """
-        if "kg-" not in html and "footnote" not in html:
+        if "kg-" not in html and "footnote" not in html and "#/portal" not in html:
             return html
         soup = BeautifulSoup(html, "html.parser")
+        _convert_buttons_and_portal_links(soup)
         for tag in soup.find_all(class_=True):
             classes = [c for c in tag.get("class", []) if not c.startswith("kg-")]
             if classes:
@@ -206,3 +210,29 @@ def _convert_markdown_footnotes(soup) -> None:
     for backlink in section.find_all("a", class_="footnote-backref"):
         del backlink["class"]
         backlink["role"] = "doc-backlink"
+
+
+def _is_portal_link(href: str) -> bool:
+    """Ghost "portal" links (sign up, support, account) only work on the website itself."""
+    return href.startswith("#/portal") or "/#/portal" in href
+
+
+def _convert_buttons_and_portal_links(soup) -> None:
+    """Button cards -> canonical ``<p class="button">``; portal buttons removed, portal links unwrapped.
+
+    Unwrapped words are kept and marked (``phoenix_ebook.canonical``) so the
+    builder can report the paragraph.
+    """
+    for card in soup.find_all("div", class_="kg-button-card"):
+        link = card.find("a", href=True)
+        if link is None or _is_portal_link(link["href"]):
+            card.decompose()
+            continue
+        button = soup.new_tag("p", attrs={"class": "button"})
+        anchor = soup.new_tag("a", href=link["href"])
+        anchor.extend(list(link.contents))
+        button.append(anchor)
+        card.replace_with(button)
+    for link in soup.find_all("a", href=True):
+        if _is_portal_link(link["href"]):
+            mark_call_to_action(soup, link)

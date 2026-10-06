@@ -19,6 +19,7 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
+from phoenix_ebook.canonical import CALL_TO_ACTION, CALL_TO_ACTION_BANNER
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
 from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
@@ -405,6 +406,39 @@ def _half_title_page(spec: BookSpec) -> str:
             f'<p class="title">{glue(html.escape(spec.title))}</p>\n{subtitle}</section>')
 
 
+def _report_calls_to_action(soup, post: Post, problems: list[BuildProblem]) -> None:
+    """Report and unmark what platforms and processors marked as calls-to-action (#20).
+
+    One problem per paragraph whose call-to-action link was unwrapped (the words
+    stay), and one per promotional image kept because it isn't at the end.
+    """
+    reported = set()
+    for span in soup.find_all("span", attrs={CALL_TO_ACTION: True}):
+        block = span.find_parent(["p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "figcaption", "blockquote"]) or span
+        if id(block) not in reported:
+            reported.add(id(block))
+            text = " ".join(block.get_text().split())
+            image = span.find("img")
+            if not text and image is not None:  # a linked image with no words: describe the image
+                figure = span.find_parent("figure")
+                caption = figure.find("figcaption") if figure else None
+                label = (caption and " ".join(caption.get_text().split())) or image.get("alt") or image.get("src", "")
+                detail = f"link removed from an image (image kept): \"{label[:200]}\""
+            else:
+                detail = f"link removed, words kept: \"{text[:200]}\""
+            problems.append(BuildProblem(kind="call-to-action", post_slug=post.slug, url=span[CALL_TO_ACTION],
+                                         detail=detail))
+        span.unwrap()
+    for figure in soup.find_all(attrs={CALL_TO_ACTION_BANNER: True}):
+        link = figure.find("a", href=True)
+        caption = figure.find("figcaption")
+        text = " ".join(caption.get_text().split()) if caption else ""
+        problems.append(BuildProblem(kind="call-to-action", post_slug=post.slug, url=link["href"] if link else None,
+                                     detail="promotional image kept (not at the end of the post)"
+                                            + (f": \"{text[:200]}\"" if text else "")))
+        del figure[CALL_TO_ACTION_BANNER]
+
+
 def _is_animated(data: bytes) -> bool:
     try:
         with Image.open(io.BytesIO(data)) as img:
@@ -623,6 +657,7 @@ def build(
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
         processor.clean(soup, post)
+        _report_calls_to_action(soup, post, problems)
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
         for img in soup.find_all("img"):

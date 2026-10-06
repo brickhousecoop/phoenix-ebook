@@ -1,0 +1,166 @@
+"""Website calls-to-action in books: banners, buttons, subscribe/portal links (#20)."""
+from __future__ import annotations
+
+import io
+import re
+
+import pytest
+from bs4 import BeautifulSoup
+from PIL import Image
+
+import build_epub
+import phoenix_ebook.processors  # noqa: F401 — registers flaminghydra
+from conftest import assert_valid_epub, ok, png, post
+from phoenix_ebook.models import Post
+from phoenix_ebook.platforms.ghost import GhostPlatform
+from phoenix_ebook.processors.base import get_processor
+
+SUB = "https://flaminghydra.com/subscribe"
+LOGO = "https://storage.ghost.io/c/x/content/images/2025/07/High-Res-FH-Logo-Light-BG.gif"
+
+# The real trailing block (end of "No, We Definitely Knew How Bad It Would Be"), trimmed.
+TRAILING_BLOCK = (
+    '<hr><h3 id="if-you-love-this-free-post">If you love this free post subscribe, starting at just $3/month, to</h3>'
+    '<figure class="kg-card kg-image-card kg-card-hascaption"><a href="' + SUB + '"><img src="' + LOGO + '" '
+    'class="kg-image" alt="" width="2000" height="488"></a><figcaption><a href="' + SUB + '" rel="noreferrer">'
+    '<i><b><strong>ENJOY A THOUGHTPROVOKING NEWSLETTER DAILY.</strong></b></i></a></figcaption></figure><p></p>'
+)
+BUTTON = '<div class="kg-card kg-button-card kg-align-center"><a href="{href}" class="kg-btn kg-btn-accent">{label}</a></div>'
+
+
+def processed(html: str, processor: str = "flaminghydra") -> str:
+    html = GhostPlatform().normalize_html(html)
+    soup = BeautifulSoup(html, "html.parser")
+    get_processor(processor).clean(soup, Post(slug="p", title="t", html=html))
+    return str(soup)
+
+
+def animated_gif() -> bytes:
+    frames = [Image.new("RGB", (40, 30), c) for c in ("red", "green")]
+    buf = io.BytesIO()
+    frames[0].save(buf, format="GIF", save_all=True, append_images=frames[1:], duration=100, loop=0)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------- trailing banners
+
+def test_trailing_banner_block_removed_entirely():
+    out = processed("<p>Last real paragraph.</p>" + TRAILING_BLOCK)
+    assert out == "<p>Last real paragraph.</p>"
+
+
+def test_why_not_subscribe_variant_removed():
+    html = ('<p>End.</p><hr><figure class="kg-card kg-image-card kg-card-hascaption"><a href="' + SUB + '">'
+            '<img src="https://x/5131fe48.gif" alt=""></a><figcaption><a href="' + SUB + '">Why Not Subscribe?</a>'
+            '</figcaption></figure>')
+    assert processed(html) == "<p>End.</p>"
+
+
+def test_mid_post_banner_is_kept_and_marked():
+    html = ('<p>Save the time it will take you to read this post and subscribe.</p>'
+            '<figure><a href="' + SUB + '"><img src="https://x/bear.png" alt=""></a></figure>'
+            '<p>The Holiday Bear has a message for you, and it goes on for a while.</p>')
+    out = processed(html)
+    assert "bear.png" in out and "data-call-to-action-banner" in out
+
+
+def test_banner_followed_by_notes_is_not_trailing():
+    html = ('<p>Body.<sup class="footnote-ref"><a href="#fn1" id="fnref1">[1]</a></sup></p>'
+            '<figure><a href="' + SUB + '"><img src="https://x/b.gif" alt=""></a></figure>'
+            '<hr class="footnotes-sep"><section class="footnotes"><ol class="footnotes-list">'
+            '<li id="fn1" class="footnote-item"><p>Note. <a href="#fnref1" class="footnote-backref">↩︎</a></p></li>'
+            '</ol></section>')
+    assert "b.gif" in processed(html)
+
+
+def test_image_linking_elsewhere_is_untouched():
+    html = '<p>End.</p><figure><a href="https://bsky.app/profile/flaminghydra"><img src="https://x/sky.png" alt="Sky"></a></figure>'
+    assert "sky.png" in processed(html)
+
+
+# ---------------------------------------------------------------- buttons
+
+def test_button_card_becomes_canonical_button():
+    out = GhostPlatform().normalize_html(BUTTON.format(href="https://example.org/book", label="READ THE BOOK"))
+    assert out == '<p class="button"><a href="https://example.org/book">READ THE BOOK</a></p>'
+
+
+@pytest.mark.parametrize("href, label", [
+    ("#/portal/support", "BUY FLAMING HYDRA A SLICE"),                      # Ghost-wide: dead portal link
+    ("https://bsky.app/intent/compose?text=FLAMING%20HYDRA", "SHARE THIS POST ON BLUESKY!"),
+    ("https://shop.flaminghydra.com/", "VISIT THE FLAMING HYDRA SUPERSTORE"),
+    ("https://flaminghydra.com/subscribe", "SUBSCRIBE"),
+])
+def test_call_to_action_buttons_removed_whole(href, label):
+    out = processed("<p>Before.</p>" + BUTTON.format(href=href, label=label) + "<p>After.</p>")
+    assert out == "<p>Before.</p><p>After.</p>"
+
+
+def test_other_buttons_kept():
+    out = processed(BUTTON.format(href="https://example.org/book", label="READ THE BOOK"))
+    assert '<p class="button"><a href="https://example.org/book">READ THE BOOK</a></p>' == out
+
+
+# ---------------------------------------------------------------- text links
+
+@pytest.mark.parametrize("href", ["/#/portal/signup", "https://flaminghydra.com/subscribe", "/subscribe"])
+def test_links_in_sentences_unwrapped_words_kept(href):
+    out = processed(f'<p>If you love it, why not <a href="{href}">subscribe or donate</a>?</p>')
+    text = BeautifulSoup(out, "html.parser").get_text()
+    assert text == "If you love it, why not subscribe or donate?"
+    assert "<a " not in out
+
+
+def test_ordinary_links_untouched():
+    html = '<p>See <a href="https://example.org/subscribe-to-reason">this essay</a> and <a href="/about">about</a>.</p>'
+    assert processed(html) == html
+
+
+# ---------------------------------------------------------------- generic processor
+
+def test_generic_processor_keeps_site_rules_off_but_ghost_portal_handling_on():
+    html = '<p>a <a href="#/portal/signup">sign up</a></p>' + TRAILING_BLOCK
+    out = processed(html, processor="generic")
+    assert "High-Res-FH-Logo" in out                     # FH banner rule not applied
+    assert 'href="#/portal' not in out                   # Ghost portal handling still applied
+
+
+# ---------------------------------------------------------------- report and the built book
+
+def test_report_lists_unlinked_paragraphs_and_kept_banners(build_book):
+    html = ('<p>Why not <a href="https://flaminghydra.com/subscribe">subscribe</a> or '
+            '<a href="#/portal/support">donate</a>?</p>'
+            '<figure><a href="' + SUB + '"><img src="https://img.test/bear.png" alt="A bear"></a>'
+            '<figcaption>The bear</figcaption></figure><p>More of the post.</p>')
+    book = build_book(post(GhostPlatform().normalize_html(html)), {"https://img.test/bear.png": [ok(png())]},
+                      processor="flaminghydra")
+    cta = [p for p in book.result.problems if p.kind == "call-to-action"]
+    assert len(cta) == 2  # one per paragraph (two links), one for the kept banner
+    assert 'words kept: "Why not subscribe or donate?"' in cta[0].detail
+    assert "promotional image kept" in cta[1].detail and "The bear" in cta[1].detail
+    chapter = book.chapter()
+    assert "data-call-to-action" not in chapter and "Why not subscribe or donate?" in chapter
+
+
+def test_removed_banner_is_never_downloaded_and_hazard_is_none(build_book):
+    html = "<p>Last real paragraph.</p>" + TRAILING_BLOCK
+    book = build_book(post(GhostPlatform().normalize_html(html)), {LOGO: [ok(animated_gif(), "image/gif")]},
+                      processor="flaminghydra")
+    assert LOGO not in book.session.calls and not book.image_names()
+    assert re.findall(r'schema:accessibilityHazard">([^<]*)', book.text("content.opf")) == ["none"]
+    assert_valid_epub(book.path)
+
+
+def test_cli_summary_line(capsys):
+    from phoenix_ebook.models import BuildProblem
+    build_epub._report_problems([BuildProblem("call-to-action", "p", SUB, 'link removed, words kept: "x"')])
+    assert "1 website call-to-action (subscribe/support) was unlinked or kept" in capsys.readouterr().err
+
+
+def test_portal_link_around_an_image_is_described(build_book):
+    html = ('<figure><a href="#/portal/"><img src="https://img.test/free.png" alt=""></a>'
+            '<figcaption>Free posts! Click here!</figcaption></figure><p>More.</p>')
+    book = build_book(post(GhostPlatform().normalize_html(html)), {"https://img.test/free.png": [ok(png())]},
+                      processor="flaminghydra")
+    [cta] = [p for p in book.result.problems if p.kind == "call-to-action"]
+    assert cta.detail == 'link removed from an image (image kept): "Free posts! Click here!"'
