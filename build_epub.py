@@ -17,8 +17,8 @@ except ImportError:
 import requests
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
-from phoenix_ebook.epub_builder import build, validate_spec
-from phoenix_ebook.errors import InvalidBookSpec, ManifestError, PhoenixError, PostNotFound
+from phoenix_ebook.epub_builder import build, fetch_posts, validate_spec
+from phoenix_ebook.errors import InvalidBookSpec, ManifestError, PhoenixError
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY
 from phoenix_ebook.models import BookSpec, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
@@ -148,16 +148,7 @@ def _run_build(spec: BookSpec, override_secret: str | None) -> None:
     processor = get_processor(spec.source.processor)
 
     session = requests.Session()
-    # Try every slug so all typos are reported at once; other errors stop at once.
-    posts, missing, site = [], [], spec.source.url
-    for slug in spec.source.slugs:
-        try:
-            posts.append(platform.fetch_post(session, spec.source.url, secret, slug))
-        except PostNotFound as exc:
-            missing.extend(exc.slugs)
-            site = exc.site
-    if missing:
-        raise PostNotFound(site, missing)
+    posts = fetch_posts(spec.source, platform, secret, session)
 
     result = build(spec, posts, processor, session=session, image_base_url=spec.source.url, platform=platform)
     print(f"wrote {result.path}")

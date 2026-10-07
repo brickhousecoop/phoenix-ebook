@@ -117,6 +117,16 @@ def get_processor(name: str) -> HtmlProcessor:
 register_processor(GenericProcessor)
 
 
+def recognized_site(platform: str, domain: str) -> bool:
+    """Whether any processor registered for ``platform`` claims ``domain`` via its ``sites``.
+
+    Used to tell a site's own addresses (which may span several hostnames, e.g.
+    a custom domain and a `*.ghost.io` one) from an address on some other site.
+    """
+    return any(cls.platform == platform and any(site in domain for site in cls.sites)
+               for cls in _REGISTRY.values())
+
+
 def select_processor(platform: str, domain: str, default: str) -> str:
     """Name of the processor for a site: the first one registered for ``platform``
     whose ``sites`` match ``domain``, else ``default`` (the platform's default)."""

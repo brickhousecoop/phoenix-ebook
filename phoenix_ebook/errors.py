@@ -11,9 +11,15 @@ import json
 class PhoenixError(Exception):
     """Base class for errors with a message meant for the user."""
 
+    field: str | None = None  # the BookSpec field this concerns, if any (set by callers that know)
+
 
 class InvalidBookSpec(PhoenixError, ValueError):
     """The BookSpec can't be built as given (the message says why)."""
+
+    def __init__(self, message: str, field: str | None = None):
+        super().__init__(message)
+        self.field = field
 
 
 class MissingContentFile(InvalidBookSpec):

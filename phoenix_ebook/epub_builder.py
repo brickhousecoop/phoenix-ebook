@@ -24,9 +24,9 @@ from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
 from phoenix_ebook.dates import format_date as _format_date
-from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError
+from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError, PostNotFound
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
-from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post
+from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post, SourceSpec
 from phoenix_ebook.platforms.base import Platform
 from phoenix_ebook.processors.base import HtmlProcessor
 
@@ -198,13 +198,15 @@ def validate_spec(spec: BookSpec) -> None:
     Call before fetching posts, so mistakes fail fast. ``build()`` also calls it.
     """
     if spec.series_number and not spec.series:
-        raise InvalidBookSpec("--series-number / [book] series_number needs --series / [book] series")
+        raise InvalidBookSpec("--series-number / [book] series_number needs --series / [book] series",
+                              field="series_number")
     if spec.issn and not spec.series:
-        raise InvalidBookSpec("--issn / [book] issn identifies a series, so it needs --series / [book] series")
+        raise InvalidBookSpec("--issn / [book] issn identifies a series, so it needs --series / [book] series",
+                              field="issn")
     if spec.isbn and _isbn_identifier(spec.isbn)[1] is None:
-        raise InvalidBookSpec(f"--isbn / [book] isbn: {spec.isbn!r} is not a valid ISBN-10 or ISBN-13")
+        raise InvalidBookSpec(f"--isbn / [book] isbn: {spec.isbn!r} is not a valid ISBN-10 or ISBN-13", field="isbn")
     if spec.issn and normalize_issn(spec.issn) is None:
-        raise InvalidBookSpec(f"--issn / [book] issn: {spec.issn!r} is not a valid ISSN")
+        raise InvalidBookSpec(f"--issn / [book] issn: {spec.issn!r} is not a valid ISSN", field="issn")
     check_content_files(spec)
     _check_output_path(spec.output)
 
@@ -219,6 +221,26 @@ def _check_output_path(output: str) -> None:
         raise OutputError(f"can't write {output}: it's a folder; give a file name ending in .epub")
 
 
+def fetch_posts(source: SourceSpec, platform: Platform, secret: str, session: requests.Session) -> list[Post]:
+    """Fetch every slug in ``source`` from ``platform``, in order.
+
+    Tries every slug so a batch of typos is reported together: raises one
+    ``PostNotFound`` listing every missing slug once all have been tried.
+    Other errors (auth, network) stop immediately. Shared by the CLI and the
+    website so both report missing posts the same way.
+    """
+    posts, missing, site = [], [], source.url
+    for slug in source.slugs:
+        try:
+            posts.append(platform.fetch_post(session, source.url, secret, slug))
+        except PostNotFound as exc:
+            missing.extend(exc.slugs)
+            site = exc.site
+    if missing:
+        raise PostNotFound(site, missing)
+    return posts
+
+
 def check_content_files(spec: BookSpec) -> None:
     """Raise MissingContentFile if any content-file path in ``spec`` doesn't exist.
 
@@ -227,13 +249,14 @@ def check_content_files(spec: BookSpec) -> None:
     for field, option in CONTENT_FILE_OPTIONS.items():
         path = getattr(spec, field)
         if path and not Path(path).is_file():
-            raise MissingContentFile(f"{option}: file not found: {path}")
+            raise MissingContentFile(f"{option}: file not found: {path}", field=field)
         if path and field not in ("cover",):
             try:
                 Path(path).read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 raise InvalidBookSpec(f"{option}: {path} isn't UTF-8 text; save it as UTF-8 "
-                                      "(most editors offer this under 'Save As' or 'Encoding')") from None
+                                      "(most editors offer this under 'Save As' or 'Encoding')",
+                                      field=field) from None
 
 
 def _remove_image(img) -> None:

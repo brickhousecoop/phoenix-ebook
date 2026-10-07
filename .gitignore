@@ -9,6 +9,7 @@ token_old.py
 *.epub
 *_images/
 *.html
+!web/templates/*.html
 
 # Python
 __pycache__/

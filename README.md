@@ -218,6 +218,19 @@ To adjust the look of a book, add your own stylesheet; its rules are applied las
 
 In a manifest: `css = "my-styles.css"` under a `[style]` table.
 
+## Website
+
+A FastAPI app in `web/` turns the same form into a `BookSpec` and runs every pre-build check (missing/duplicate posts, more than 100 posts, `validate_spec()`, a cover under 4.5 MB), so you can build a book without the command line. It's local-only for now — no build step yet, see [ADR 0002](docs/adr/0002-website-on-vercel-calls-the-library.md).
+
+Install its extra dependencies and run it:
+
+```bash
+uv pip install --python .venv/bin/python -r requirements-web.txt
+.venv/bin/uvicorn web.main:app --reload
+```
+
+Then open <http://127.0.0.1:8000>. It uses the same secret lookup as the CLI (see "Store your API key" above).
+
 ## Extending phoenix-ebook
 
 ```

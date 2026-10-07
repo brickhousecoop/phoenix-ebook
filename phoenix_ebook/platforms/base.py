@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from urllib.parse import urlsplit
 
 import requests
 
 from phoenix_ebook.alt_text import normalize_image_url
 from phoenix_ebook.errors import InvalidBookSpec
 from phoenix_ebook.models import Post
+from phoenix_ebook.processors.base import recognized_site
 
 
 class Platform(ABC):
@@ -36,6 +38,26 @@ class Platform(ABC):
         Used to match alt-text overrides. Default: drop the query string and fragment.
         """
         return normalize_image_url(url)
+
+    def parse_address(self, address: str) -> str | None:
+        """The post slug ``address`` names, or None if it's not recognized.
+
+        Accepts a bare slug as-is. Accepts a full URL (with or without a
+        scheme) only if its host belongs to a site registered for this
+        platform (any processor's ``sites``, see ``recognized_site``) — so an
+        address on some other site is rejected rather than guessed at.
+        """
+        address = address.strip()
+        if not address:
+            return None
+        if "://" not in address and "/" not in address and "." not in address:
+            return address  # a bare slug has none of these
+        candidate = address if "://" in address else f"//{address}"
+        parts = urlsplit(candidate)
+        if not parts.netloc or not recognized_site(self.name, parts.netloc.lower()):
+            return None
+        slug = parts.path.rstrip("/").rsplit("/", 1)[-1]
+        return slug or None
 
     @abstractmethod
     def fetch_post(self, session: requests.Session, url: str, secret: str, slug: str) -> Post:

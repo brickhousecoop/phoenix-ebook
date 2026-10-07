@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Build a Flaming Hydra book — phoenix-ebook</title>
+<style>
+  :root {
+    color-scheme: light;
+    --text: #1a1a1a;
+    --bg: #ffffff;
+    --muted: #4b4b4b;
+    --border: #767676;
+    --accent: #0b4f8a;
+    --error: #a3000e;
+    --error-bg: #fdecea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 1rem 1rem 3rem;
+  }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.1rem; }
+  fieldset {
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    margin: 0 0 1.25rem;
+    padding: 1rem;
+  }
+  legend { font-weight: 600; padding: 0 0.25rem; }
+  label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
+  label:first-of-type { margin-top: 0; }
+  .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.25rem; }
+  input[type="text"], input[type="number"], input[type="file"], input[type="date"], textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    font: inherit;
+    color: inherit;
+    background: var(--bg);
+  }
+  textarea { resize: vertical; }
+  .checkbox { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; margin: 0.75rem 0; }
+  .checkbox input { width: 1.25rem; height: 1.25rem; }
+  details { margin: 0 0 1.25rem; }
+  details > summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.5rem 0;
+  }
+  .field-error {
+    color: var(--error);
+    font-weight: 600;
+    margin: 0.25rem 0;
+    white-space: pre-line;
+  }
+  #error-summary li { white-space: pre-line; }
+  [aria-invalid="true"] { border-color: var(--error); }
+  #error-summary {
+    border: 2px solid var(--error);
+    background: var(--error-bg);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0 0 1.5rem;
+  }
+  #error-summary h2 { margin-top: 0; color: var(--error); }
+  #error-summary a { color: var(--error); }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.6rem 1.25rem;
+    border-radius: 0.3rem;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
+  summary:focus-visible, [tabindex]:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+  }
+  a { color: var(--accent); }
+  .success {
+    border: 2px solid #1b5e20;
+    background: #e8f5e9;
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Build a Flaming Hydra book</h1>
+  <p class="hint">Turns a list of Flaming Hydra posts into an EPUB. Any post the configured
+    key can read is fair game, drafts and paid posts included.</p>
+
+  {% if submitted and result.ok %}
+  <div class="success" role="status">
+    <h2>Checks passed</h2>
+    <p>Everything looks good: <strong>{{ result.spec.source.slugs | length }}</strong>
+      post{{ '' if result.spec.source.slugs | length == 1 else 's' }} found, title
+      “{{ result.spec.title }}”.</p>
+    <p>Building isn't wired up yet — that's the next piece.</p>
+  </div>
+  {% else %}
+
+  {% if submitted and not result.ok %}
+  <div id="error-summary" role="alert" tabindex="-1" autofocus>
+    <h2>Fix these before building</h2>
+    <ul>
+      {% for e in result.errors %}
+      <li><a href="#{{ e.field or 'error-summary' }}">{{ e.message }}</a></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data" novalidate>
+    <fieldset>
+      <legend>Posts</legend>
+
+      <label for="posts">Post addresses, one per line, in reading order</label>
+      <p class="hint">A full address (<code>flaminghydra.com/…</code> or
+        <code>flaminghydra.ghost.io/…</code>) or just the slug. Up to {{ max_posts }} posts.</p>
+      <textarea id="posts" name="posts" rows="8" aria-describedby="posts-errors"
+        {% if result.errors_for('posts') %}aria-invalid="true"{% endif %}>{{ raw.posts }}</textarea>
+      <div id="posts-errors">
+        {% for msg in result.errors_for('posts') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+      </div>
+
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" value="{{ raw.title }}" aria-describedby="title-errors"
+        {% if result.errors_for('title') %}aria-invalid="true"{% endif %}>
+      <div id="title-errors">
+        {% for msg in result.errors_for('title') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+      </div>
+
+      <label for="subtitle">Subtitle</label>
+      <input type="text" id="subtitle" name="subtitle" value="{{ raw.subtitle }}">
+
+      <label for="editor">Editor</label>
+      <p class="hint">Who compiled the book; credited as its creator. Post authors become contributors.</p>
+      <input type="text" id="editor" name="editor" value="{{ raw.editor }}">
+
+      <label for="cover">Cover image (optional)</label>
+      <input type="file" id="cover" name="cover" accept="image/*" aria-describedby="cover-errors"
+        {% if result.errors_for('cover') %}aria-invalid="true"{% endif %}>
+      <div id="cover-errors">
+        {% for msg in result.errors_for('cover') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+      </div>
+    </fieldset>
+
+    <details {% if advanced_open %}open{% endif %}>
+      <summary>Advanced</summary>
+      <fieldset>
+        <legend>Credits and metadata</legend>
+
+        <label for="series">Series</label>
+        <input type="text" id="series" name="series" value="{{ raw.series }}" aria-describedby="series-errors"
+          {% if result.errors_for('series') %}aria-invalid="true"{% endif %}>
+        <div id="series-errors">
+          {% for msg in result.errors_for('series') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <label for="series_number">Series number</label>
+        <input type="text" id="series_number" name="series_number" value="{{ raw.series_number }}"
+          aria-describedby="series_number-errors"
+          {% if result.errors_for('series_number') %}aria-invalid="true"{% endif %}>
+        <div id="series_number-errors">
+          {% for msg in result.errors_for('series_number') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <label for="publisher">Publisher</label>
+        <input type="text" id="publisher" name="publisher" value="{{ raw.publisher }}">
+
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3">{{ raw.description }}</textarea>
+
+        <label for="pub_date">Publication date</label>
+        <p class="hint">e.g. 2026-09-29</p>
+        <input type="text" id="pub_date" name="pub_date" value="{{ raw.pub_date }}">
+
+        <label for="lang">Language code</label>
+        <input type="text" id="lang" name="lang" value="{{ raw.lang }}">
+
+        <label for="isbn">ISBN</label>
+        <input type="text" id="isbn" name="isbn" value="{{ raw.isbn }}" aria-describedby="isbn-errors"
+          {% if result.errors_for('isbn') %}aria-invalid="true"{% endif %}>
+        <div id="isbn-errors">
+          {% for msg in result.errors_for('isbn') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <label for="issn">ISSN</label>
+        <p class="hint">Identifies the series (all issues), not this book. Requires a series name.</p>
+        <input type="text" id="issn" name="issn" value="{{ raw.issn }}" aria-describedby="issn-errors"
+          {% if result.errors_for('issn') %}aria-invalid="true"{% endif %}>
+        <div id="issn-errors">
+          {% for msg in result.errors_for('issn') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <label for="rights">Rights statement</label>
+        <input type="text" id="rights" name="rights" value="{{ raw.rights }}">
+      </fieldset>
+
+      <fieldset>
+        <legend>Images</legend>
+
+        <label for="image_max_width">Max image width (px)</label>
+        <p class="hint">0 = no resizing.</p>
+        <input type="number" id="image_max_width" name="image_max_width" value="{{ raw.image_max_width }}"
+          aria-describedby="image_max_width-errors"
+          {% if result.errors_for('image_max_width') %}aria-invalid="true"{% endif %}>
+        <div id="image_max_width-errors">
+          {% for msg in result.errors_for('image_max_width') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <label for="image_quality">JPEG quality (1-95)</label>
+        <input type="number" id="image_quality" name="image_quality" value="{{ raw.image_quality }}"
+          aria-describedby="image_quality-errors"
+          {% if result.errors_for('image_quality') %}aria-invalid="true"{% endif %}>
+        <div id="image_quality-errors">
+          {% for msg in result.errors_for('image_quality') %}<p class="field-error">{{ msg }}</p>{% endfor %}
+        </div>
+
+        <div class="checkbox">
+          <input type="checkbox" id="keep_original_images" name="keep_original_images"
+            {% if raw.keep_original_images %}checked{% endif %}>
+          <label for="keep_original_images" style="margin:0">Embed images exactly as downloaded (no resizing)</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Book structure</legend>
+
+        <div class="checkbox">
+          <input type="checkbox" id="placeholders" name="placeholders"
+            {% if raw.placeholders %}checked{% endif %}>
+          <label for="placeholders" style="margin:0">Add placeholder pages for front/back-matter sections
+            with no file</label>
+        </div>
+
+        <label for="sort_names">Sort-name overrides</label>
+        <p class="hint">One per line: <code>Name = Last, First</code></p>
+        <textarea id="sort_names" name="sort_names" rows="3">{{ raw.sort_names }}</textarea>
+
+        <label for="alt_text">Alt-text overrides</label>
+        <p class="hint">One per line: <code>image URL = alt text</code> (empty text = decorative)</p>
+        <textarea id="alt_text" name="alt_text" rows="3">{{ raw.alt_text }}</textarea>
+      </fieldset>
+    </details>
+
+    <button type="submit">Check</button>
+  </form>
+  {% endif %}
+</main>
+</body>
+</html>
