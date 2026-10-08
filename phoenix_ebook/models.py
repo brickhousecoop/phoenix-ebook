@@ -94,6 +94,8 @@ class BuildProblem:
     detail: str
     location: str | None = None  # e.g. "image 3 of 12" within the chapter
     caption: str | None = None
+    alt: str | None = None  # alt-text warnings: the image's current alt text, if any
+    is_link: bool = False  # alt-text warnings: the image is all there is of a link, so its alt text names the link
 
 
 @dataclass

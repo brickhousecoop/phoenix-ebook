@@ -5,8 +5,9 @@ FastAPI's request objects to the plain values this module works with.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field as dc_field
-from typing import Callable
+from typing import Callable, Mapping
 
 import requests
 
@@ -50,6 +51,7 @@ class RawForm:
     cover_path: str | None = None  # written to disk by the caller (see runs.run)
     cover_bytes: bytes | None = None  # the cover as uploaded, for the image/size check
     cover_filename: str = ""  # as uploaded; its extension names the temporary file
+    kept_cover: str = ""  # the last build's cover, kept in storage (see storage.save_upload); used if no new one
 
     series: str = ""
     series_number: str = ""
@@ -88,13 +90,58 @@ def parse_post_addresses(text: str) -> list[tuple[int, str]]:
 
 
 def _parse_kv_lines(text: str) -> dict[str, str]:
-    """"key = value" per line (blank lines ignored) -> a dict, last one wins."""
+    """"key = value" per line (blank lines ignored) -> a dict, last one wins.
+
+    The first "=" with a space before it splits the line, so an image address
+    containing "=" (``a.png?v=2 = A view``) stays whole.
+    """
     result: dict[str, str] = {}
     for _, line in parse_post_addresses(text):
-        key, _, value = line.partition("=")
+        match = re.match(r"(.*?)\s+=\s*(.*)$", line)
+        key, value = (match[1], match[2]) if match else line.partition("=")[::2]
         if key.strip():
             result[key.strip()] = value.strip()
     return result
+
+
+ALT_KINDS = ("image-missing-alt", "image-suspicious-alt")
+
+
+@dataclass
+class AltFix:
+    """One alt-text box from the results page."""
+
+    url: str
+    text: str = ""
+    decorative: bool = False
+    current: str = ""  # the alt text the box was prefilled with
+
+
+def alt_fixes_from(form: Mapping[str, str]) -> list[AltFix]:
+    """The results page's alt-text boxes (``fix_url_N``, ``fix_alt_N``, ``fix_decorative_N``, ``fix_current_N``)."""
+    fixes = []
+    for key, url in form.items():
+        if match := re.fullmatch(r"fix_url_(\d+)", key):
+            n = match[1]
+            fixes.append(AltFix(url, form.get(f"fix_alt_{n}", ""), f"fix_decorative_{n}" in form,
+                                form.get(f"fix_current_{n}", "")))
+    return fixes
+
+
+def merge_alt_fixes(alt_text: str, fixes: list[AltFix]) -> str:
+    """The Alt text field with the fixes added: decorative as "", new text as written.
+
+    A box left as it was prefilled isn't a fix. Later lines win, so a fix
+    replaces an earlier entry for the same image.
+    """
+    lines = [alt_text.strip()] if alt_text.strip() else []
+    for fix in fixes:
+        text = " ".join(fix.text.split())
+        if fix.decorative:
+            lines.append(f"{fix.url} = ")
+        elif text and text != " ".join(fix.current.split()):
+            lines.append(f"{fix.url} = {text}")
+    return "\n".join(lines)
 
 
 def _check_post_list(raw_text: str) -> tuple[list[str], list[FormError]]:

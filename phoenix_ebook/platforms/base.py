@@ -39,6 +39,10 @@ class Platform(ABC):
         """
         return normalize_image_url(url)
 
+    def thumbnail_url(self, url: str, width: int = 300) -> str:
+        """A small version of the image at ``url``, for previews. Default: the image itself."""
+        return url
+
     def parse_address(self, address: str) -> str | None:
         """The post slug ``address`` names, or None if it's not recognized.
 

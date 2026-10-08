@@ -82,6 +82,16 @@ class GhostPlatform(Platform):
         canonical = super().canonical_image_url(url)
         return re.sub(r"/size/w\d+(?:h\d+)?/", "/", canonical, count=1)
 
+    def thumbnail_url(self, url: str, width: int = 300) -> str:
+        """Ghost's own resized WebP copy of an image it hosts ('…/content/images/size/w300/format/webp/…').
+
+        SVGs and images hosted elsewhere come back unchanged.
+        """
+        canonical = self.canonical_image_url(url)
+        if "/content/images/" not in canonical or canonical.lower().endswith(".svg"):
+            return url
+        return canonical.replace("/content/images/", f"/content/images/size/w{width}/format/webp/", 1)
+
     def __init__(self) -> None:
         self._timezones: dict[str, ZoneInfo | None] = {}  # site url -> timezone
 

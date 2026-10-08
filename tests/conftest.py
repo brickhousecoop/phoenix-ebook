@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import shutil
 import socket
@@ -29,6 +30,17 @@ def no_network(monkeypatch):
     def refuse(*args, **kwargs):
         raise RuntimeError("tests must not touch the network")
     monkeypatch.setattr(socket.socket, "connect", refuse)
+
+
+@pytest.fixture(autouse=True)
+def no_stored_secrets(monkeypatch, tmp_path):
+    """Keys stored on this machine (file, keyring, environment) never reach a test."""
+    from phoenix_ebook import secrets
+    monkeypatch.setattr(secrets, "SECRET_FILE", tmp_path / "phoenix_secrets.json")
+    monkeypatch.setattr(secrets, "LEGACY_GHOST_SECRET_FILE", tmp_path / "ghost_epub_secrets.json")
+    monkeypatch.setattr(secrets, "keyring", None)
+    for name in [n for n in os.environ if n.startswith("PHOENIX_SECRET_")]:
+        monkeypatch.delenv(name)
 
 
 @pytest.fixture(autouse=True)

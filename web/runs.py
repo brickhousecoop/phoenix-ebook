@@ -17,7 +17,7 @@ from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
 from web.forms import CheckResult, FormError, RawForm, check_submission
-from web.storage import save_book
+from web.storage import load_upload, new_folder, save_book, save_upload
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ class Outcome:
     check: CheckResult
     url: str | None = None
     problems: list[BuildProblem] = field(default_factory=list)
+    kept_cover: str = ""  # the cover, kept next to the book for a rebuild
 
     @property
     def built(self) -> bool:
@@ -61,6 +62,12 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
     session = session or requests.Session()
     cover_tmp = None
     try:
+        if not raw.cover_bytes and raw.kept_cover:
+            kept = load_upload(raw.kept_cover)
+            if kept is None:
+                return Outcome(CheckResult(spec=None, errors=[FormError(
+                    "cover", "the cover from the last build couldn't be found; choose it again")]))
+            raw.cover_bytes, raw.cover_filename = kept
         if raw.cover_bytes:
             fd, cover_tmp = tempfile.mkstemp(suffix=Path(raw.cover_filename).suffix or ".bin")
             with os.fdopen(fd, "wb") as f:
@@ -70,7 +77,7 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
         check = check_submission(raw, session, progress)
         if not check.ok:
             return Outcome(check)
-        return _build_and_store(check, session, progress)
+        return _build_and_store(check, session, progress, cover_tmp)
     except PhoenixError as exc:
         return Outcome(CheckResult(spec=None, errors=[FormError(exc.field, str(exc))]))
     except Exception:
@@ -83,16 +90,18 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
 
 
 def _build_and_store(check: CheckResult, session: requests.Session,
-                     progress: Callable[[Progress], None]) -> Outcome:
+                     progress: Callable[[Progress], None], cover_path: str | None) -> Outcome:
     spec, source = check.spec, check.spec.source
-    with tempfile.TemporaryDirectory() as folder:
-        spec.output = str(Path(folder) / "book.epub")
+    with tempfile.TemporaryDirectory() as tmp:
+        spec.output = str(Path(tmp) / "book.epub")
         result = build(spec, check.posts, get_processor(source.processor), session=session,
                        image_base_url=source.url, platform=get_platform(source.platform), progress=progress)
         progress(Progress("save", 1, 1))
+        folder = new_folder()
         try:
-            url = save_book(result.path, spec.title)
+            url = save_book(result.path, spec.title, folder)
+            kept_cover = save_upload(cover_path, "cover" + Path(cover_path).suffix, folder) if cover_path else ""
         except Exception as exc:
             log.exception("saving the book failed")
             raise PhoenixError(f"The book was built but couldn't be saved for download ({exc}). Try again.") from exc
-    return Outcome(check, url=url, problems=result.problems)
+    return Outcome(check, url=url, problems=result.problems, kept_cover=kept_cover)

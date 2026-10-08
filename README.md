@@ -231,7 +231,9 @@ uv pip install --python .venv/bin/python -r requirements-web.txt
 
 Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command line (see "Store your API key" above).
 
-**Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. Either way the link contains a random part that can't be guessed, and nothing expires yet.
+**Fixing alt text.** Each image with missing or unhelpful alt text gets a box on the results page, with a thumbnail. Fill them in (or tick "Decorative image") and press **Rebuild with these fixes**: the whole book is built again with your descriptions added to the Alt text field, which is also under **Change settings** for any other change. An image that is all there is of a link gets no "Decorative" option: its alt text is the link's name, so it should say where the link goes.
+
+**Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. The uploaded cover is kept next to the book, so a rebuild can use it again (a browser can't refill a file field). Either way the link contains a random part that can't be guessed, and nothing expires yet.
 
 **Closing the tab mid-build** doesn't stop the build when running locally: it runs to the end and saves the book, but the link is never shown, so build it again. Whether Vercel keeps it running is to be checked when deploying (#27).
 

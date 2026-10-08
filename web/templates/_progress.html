@@ -1,0 +1,70 @@
+  <section id="progress" hidden aria-labelledby="progress-heading">
+    <h2 id="progress-heading" tabindex="-1">Building your book</h2>
+    <p id="progress-text">Starting…</p>
+    <progress id="progress-bar"></progress>
+    <p class="hint">Keep this page open; the book appears here when it's done.</p>
+    <div id="progress-announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+  </section>
+<script>
+// Streams progress while building. Without it the form still works: the page waits, then shows the result.
+(() => {
+  const form = document.querySelector("form");
+  if (!form || !window.fetch || !window.TextDecoderStream) return;
+  const panel = document.getElementById("progress");
+  const text = document.getElementById("progress-text");
+  const bar = document.getElementById("progress-bar");
+  const announcer = document.getElementById("progress-announcer");
+
+  function showPage(html) {
+    document.open();
+    document.write(html);
+    document.close();
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = new FormData(form);
+    form.hidden = true;
+    document.getElementById("error-summary")?.remove();
+    panel.hidden = false;
+    document.getElementById("progress-heading").focus();
+    try {
+      const response = await fetch(location.pathname, {
+        method: "POST", body, headers: {Accept: "application/x-ndjson"},
+      });
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buffer += value;
+        let end;
+        while ((end = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, end);
+          buffer = buffer.slice(end + 1);
+          if (!line.trim()) continue;
+          const message = JSON.parse(line);
+          if (message.type === "page") return showPage(message.html);
+          text.textContent = message.message;
+          bar.max = message.total;
+          bar.value = message.done;
+          if (message.announce) announcer.textContent = message.message;
+        }
+      }
+      throw new Error("the connection closed before the book was finished");
+    } catch (error) {
+      panel.hidden = true;
+      form.hidden = false;
+      const alert = document.createElement("div");
+      alert.id = "error-summary";
+      alert.setAttribute("role", "alert");
+      alert.tabIndex = -1;
+      alert.innerHTML = "<h2>The build was interrupted</h2><p></p>";
+      alert.querySelector("p").textContent =
+        `${error.message}. Your settings are still in the form (choose the cover again if you had one); try again.`;
+      form.before(alert);
+      alert.focus();
+    }
+  });
+})();
+</script>

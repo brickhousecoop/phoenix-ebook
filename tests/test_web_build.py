@@ -182,7 +182,7 @@ def test_a_bug_is_reported_as_a_bug(monkeypatch):
 def test_storage_failure_is_reported(monkeypatch):
     wire(monkeypatch, post_route("a"))
 
-    def refuse(path, title):
+    def refuse(path, title, folder):
         raise OSError("no space left")
     monkeypatch.setattr(runs, "save_book", refuse)
     page = TestClient(app).post("/", data={"posts": "a"}).text
@@ -222,7 +222,7 @@ def test_blob_upload_when_deployed(monkeypatch, tmp_path):
     epub = tmp_path / "b.epub"
     epub.write_bytes(b"PK...")
 
-    assert storage.save_book(str(epub), "T") == Result.download_url
+    assert storage.save_book(str(epub), "T", storage.new_folder()) == Result.download_url
     (pathname, kwargs, head), = uploads
     assert pathname.startswith("books/") and pathname.endswith("/T.epub") and len(pathname.split("/")[1]) >= 20
     assert kwargs == {"access": "public", "content_type": storage.EPUB_TYPE, "multipart": True}

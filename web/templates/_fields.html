@@ -1,0 +1,31 @@
+{#- One labelled input with its hint and its errors, both announced with the field. -#}
+{% macro field(name, label, hint=none, type="text", rows=none, attrs="") -%}
+  {%- set errors = result.errors_for(name) -%}
+  <label for="{{ name }}">{{ label }}</label>
+  {% if hint %}<p class="hint" id="{{ name }}-hint">{{ hint | safe }}</p>{% endif %}
+  {% if rows %}
+  <textarea id="{{ name }}" name="{{ name }}" rows="{{ rows }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>{{ raw[name] }}</textarea>
+  {% elif type == "file" %}
+  <input type="file" id="{{ name }}" name="{{ name }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>
+  {% else %}
+  <input type="{{ type }}" id="{{ name }}" name="{{ name }}" value="{{ raw[name] }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>
+  {% endif %}
+  <div id="{{ name }}-errors">
+    {% for msg in errors %}<p class="field-error">{{ msg }}</p>{% endfor %}
+  </div>
+{%- endmacro %}
+
+{% macro checkbox(name, label, hint) -%}
+  <div class="checkbox">
+    <input type="checkbox" id="{{ name }}" name="{{ name }}" aria-describedby="{{ name }}-hint"
+      {% if raw[name] %}checked{% endif %}>
+    <label for="{{ name }}">{{ label }}</label>
+    <p class="hint" id="{{ name }}-hint">{{ hint }}</p>
+  </div>
+{%- endmacro %}

@@ -124,7 +124,7 @@ def test_post_that_passes_checks_builds_and_shows_results(client, monkeypatch):
     assert r.status_code == 200
     assert "Your book is ready" in r.text
     assert "My Book" in r.text
-    assert "<form" not in r.text
+    assert 'id="error-summary"' not in r.text
 
 
 # ---------------------------------------------------------------- cover upload

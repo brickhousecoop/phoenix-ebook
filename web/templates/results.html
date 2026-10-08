@@ -15,12 +15,24 @@
   .summary-list { padding-left: 1.25rem; }
   .post-problems { border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 1.25rem; }
   .post-problems h3 { margin: 0.5rem 0; }
-  .problem { margin: 0 0 0.75rem; }
+  .problem { margin: 0 0 1rem; }
   .problem-kind { font-weight: 600; }
   .problem-where { color: var(--muted); }
   .problem-url { overflow-wrap: anywhere; font-size: 0.9rem; }
+  .alt-fix {
+    display: grid;
+    grid-template-columns: minmax(5rem, 8rem) 1fr;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+  }
+  .alt-fix label { margin-top: 0; }
+  .thumb { width: 100%; height: auto; border-radius: 0.2rem; background: #eee; }
   .meaning { margin-bottom: 1.25rem; }
   .meaning h3 { margin-bottom: 0.25rem; }
+  .rebuild { margin: 1.5rem 0; }
 {% endblock %}
 
 {% block main %}
@@ -30,6 +42,7 @@
     Keep the link if you want the book again later: anyone with it can download the book.</p>
   <p><a href="/">Build another book</a></p>
 
+  <form method="post" action="/" enctype="multipart/form-data" novalidate>
   {% if groups %}
   <h2>What the build changed or couldn’t do</h2>
   <p>The book works as it is. These are worth a look:</p>
@@ -38,6 +51,10 @@
     <li><a href="#about-{{ k.code }}">{{ k.label }}</a>: {{ counts[k.code] }}</li>
     {% endfor %}
   </ul>
+  {% if fix_count %}
+  <p>Below, you can write alt text for the {{ fix_count }} image{{ '' if fix_count == 1 else 's' }} that
+    need{{ 's' if fix_count == 1 else '' }} it, then rebuild the book.</p>
+  {% endif %}
 
   {% for group in groups %}
   <section class="post-problems" aria-labelledby="post-{{ loop.index }}">
@@ -45,18 +62,61 @@
     <ul>
       {% for p in group.problems %}
       {% set label = kind(p.kind).label %}
+      {% set n = fix_number(p) %}
       <li class="problem">
         <span class="problem-kind">{{ label }}</span>{% if p.location %}
         <span class="problem-where">({{ p.location }})</span>{% endif %}
         {%- if p.detail | lower != label | lower %}: {{ p.detail }}{% endif %}
         {%- if p.caption %} — caption: “{{ p.caption }}”{% endif %}
         {% if p.url %}<br><span class="problem-url">{{ p.url }}</span>{% endif %}
+        {% if n is not none %}
+        <div class="alt-fix">
+          <img class="thumb" src="{{ thumbnail(p.url) }}" alt="" loading="lazy">
+          <div>
+            <label for="fix_alt_{{ n }}">Alt text for {{ p.location }} in “{{ group.title }}”</label>
+            <p class="hint" id="fix_hint_{{ n }}">
+              {%- if p.is_link %}This image is a link: describe where it goes (e.g., the book or article it opens).
+              {%- else %}Describe what the image shows, in a sentence or two.{% endif %}</p>
+            <input type="hidden" name="fix_url_{{ n }}" value="{{ canonical(p.url) }}">
+            <input type="hidden" name="fix_current_{{ n }}" value="{{ p.alt or '' }}">
+            <textarea id="fix_alt_{{ n }}" name="fix_alt_{{ n }}" rows="2"
+              aria-describedby="fix_hint_{{ n }}">{{ p.alt or '' }}</textarea>
+            {% if not p.is_link %}
+            <div class="checkbox">
+              <input type="checkbox" id="fix_decorative_{{ n }}" name="fix_decorative_{{ n }}"
+                aria-describedby="fix_decorative_hint_{{ n }}">
+              <label for="fix_decorative_{{ n }}">Decorative image</label>
+              <p class="hint" id="fix_decorative_hint_{{ n }}">Adds nothing to the text (e.g., a divider), so
+                screen readers skip it.</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
   </section>
   {% endfor %}
+  {% else %}
+  <p>Nothing to report: the build had no warnings.</p>
+  {% endif %}
 
+  <div class="rebuild">
+    <p class="hint" id="rebuild-hint">Rebuilds the whole book with your fixes, fetching every post again. Boxes
+      left as they are change nothing.</p>
+    <button type="submit" aria-describedby="rebuild-hint">
+      {%- if fix_count %}Rebuild with these fixes{% else %}Rebuild{% endif %}</button>
+  </div>
+
+  <details>
+    <summary>Change settings</summary>
+    <p>Everything you entered for this book. Your fixes are added to the Alt text field under Advanced.</p>
+    {% include "_settings.html" %}
+  </details>
+  </form>
+
+  {% if groups %}
   <h2>What these mean</h2>
   {% for k in kinds %}
   <div class="meaning" id="about-{{ k.code }}">
@@ -64,7 +124,7 @@
     <p>{{ k.meaning | safe }} <a href="{{ k.more_url }}">More in the troubleshooting guide</a></p>
   </div>
   {% endfor %}
-  {% else %}
-  <p>Nothing to report: the build had no warnings.</p>
   {% endif %}
+
+  {% include "_progress.html" %}
 {% endblock %}

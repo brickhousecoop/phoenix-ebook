@@ -19,9 +19,10 @@ from fastapi.templating import Jinja2Templates
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.models import Progress
+from phoenix_ebook.platforms.base import get_platform
 
 from web import problems, storage
-from web.forms import MAX_POSTS, CheckResult, RawForm
+from web.forms import ALT_KINDS, MAX_POSTS, CheckResult, RawForm, alt_fixes_from, merge_alt_fixes
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
@@ -49,14 +50,28 @@ def _form_page(raw: RawForm, result: CheckResult) -> str:
 def _outcome_page(raw: RawForm, outcome: Outcome) -> str:
     if not outcome.built:
         return _form_page(raw, outcome.check)
-    groups = problems.group_by_post(outcome.problems, outcome.check.posts)
+    spec = outcome.check.spec
+    platform = get_platform(spec.source.platform)
+    fixable = [p for p in outcome.problems if p.kind in ALT_KINDS]
+    fix_numbers = {id(p): n for n, p in enumerate(fixable)}
+    raw.kept_cover = outcome.kept_cover
     return templates.get_template("results.html").render(
-        spec=outcome.check.spec,
+        spec=spec,
         url=outcome.url,
-        groups=groups,
+        groups=problems.group_by_post(outcome.problems, outcome.check.posts),
         kinds=[problems.kind(code) for code in dict.fromkeys(p.kind for p in outcome.problems)],
         counts={code: sum(p.kind == code for p in outcome.problems) for code in {p.kind for p in outcome.problems}},
         kind=problems.kind,
+        fix_count=len(fixable),
+        fix_number=lambda p: fix_numbers.get(id(p)),
+        thumbnail=platform.thumbnail_url,
+        canonical=platform.canonical_image_url,
+        # the form behind "Change settings" and the rebuild
+        raw=raw,
+        result=CheckResult(spec=None),
+        advanced_open=False,
+        max_posts=MAX_POSTS,
+        placeholder_pages=PLACEHOLDER_TEXT,
     )
 
 
@@ -121,7 +136,9 @@ async def submit(
     placeholders: str | None = Form(None),
     sort_names: str = Form(""),
     alt_text: str = Form(""),
+    kept_cover: str = Form(""),
 ):
+    fixes = alt_fixes_from(await request.form())
     has_cover = cover is not None and bool(cover.filename)
     raw = RawForm(
         posts=posts, title=title, subtitle=subtitle, editor=editor,
@@ -132,7 +149,7 @@ async def submit(
         image_max_width=image_max_width, image_quality=image_quality,
         keep_original_images=keep_original_images is not None,
         placeholders=placeholders is not None,
-        sort_names=sort_names, alt_text=alt_text,
+        sort_names=sort_names, alt_text=merge_alt_fixes(alt_text, fixes), kept_cover=kept_cover,
     )
     if STREAM_TYPE in request.headers.get("accept", ""):
         return StreamingResponse(_stream(raw), media_type=STREAM_TYPE)

@@ -607,7 +607,10 @@ def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: d
         figure = img.find_parent("figure")
         caption_tag = figure.find("figcaption") if figure else None
         caption = caption_tag.get_text(" ", strip=True) if caption_tag else None
-        where = dict(post_slug=post.slug, url=url, location=f"image {position} of {len(images)}", caption=caption)
+        link = img.find_parent("a")
+        is_link = link is not None and not link.get_text(strip=True) and len(link.find_all("img")) == 1
+        where = dict(post_slug=post.slug, url=url, location=f"image {position} of {len(images)}", caption=caption,
+                     is_link=is_link)
 
         tally["images"] += 1
         decorative = img.attrs.pop(DECORATIVE, None) is not None
@@ -628,7 +631,7 @@ def _check_alt_text(soup, post: Post, local_to_url: dict[str, str], overrides: d
             continue
         tally["described"] += 1
         if reason := suspicious_alt(alt, caption):
-            problems.append(BuildProblem(kind="image-suspicious-alt", detail=reason, **where))
+            problems.append(BuildProblem(kind="image-suspicious-alt", detail=reason, alt=alt, **where))
 
 
 def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
