@@ -1,130 +1,6 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Build a Flaming Hydra book — phoenix-ebook</title>
-<style>
-  :root {
-    color-scheme: light;
-    --text: #1a1a1a;
-    --bg: #ffffff;
-    --muted: #4b4b4b;
-    --border: #767676;
-    --accent: #0b4f8a;
-    --error: #a3000e;
-    --error-bg: #fdecea;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  main {
-    max-width: 40rem;
-    margin: 0 auto;
-    padding: 1rem 1rem 3rem;
-  }
-  h1 { font-size: 1.5rem; }
-  h2 { font-size: 1.1rem; }
-  fieldset {
-    border: 1px solid var(--border);
-    border-radius: 0.5rem;
-    margin: 0 0 1.25rem;
-    padding: 1rem;
-  }
-  legend { font-weight: 600; padding: 0 0.25rem; }
-  label { display: block; font-weight: 600; margin: 1rem 0 0.25rem; }
-  fieldset > label:first-of-type { margin-top: 0; }
-  .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.35rem; }
-  input[type="text"], input[type="number"], input[type="file"], textarea {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 0.25rem;
-    font: inherit;
-    color: inherit;
-    background: var(--bg);
-  }
-  textarea { resize: vertical; }
-  .checkbox { display: grid; grid-template-columns: 1.25rem 1fr; column-gap: 0.5rem; margin: 1rem 0; }
-  .checkbox input { width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; }
-  .checkbox label { margin: 0; }
-  .checkbox .hint { grid-column: 2; margin: 0.1rem 0 0; }
-  details { margin: 0 0 1.25rem; }
-  details.preview { margin: -0.5rem 0 1rem 1.75rem; }
-  details.preview > summary { font-weight: normal; color: var(--accent); text-decoration: underline; }
-  .pages {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 0.75rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
-    gap: 0.75rem;
-  }
-  .page {
-    aspect-ratio: 2 / 3;
-    border: 1px solid var(--border);
-    border-radius: 0.2rem;
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
-    padding: 0.75rem 0.6rem;
-    font-size: 0.8rem;
-    line-height: 1.35;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .page-title { font-weight: 700; font-size: 0.95rem; text-align: center; }
-  details > summary {
-    cursor: pointer;
-    font-weight: 600;
-    padding: 0.5rem 0;
-  }
-  .field-error {
-    color: var(--error);
-    font-weight: 600;
-    margin: 0.25rem 0;
-    white-space: pre-line;
-  }
-  #error-summary li { white-space: pre-line; }
-  [aria-invalid="true"] { border-color: var(--error); }
-  #error-summary {
-    border: 2px solid var(--error);
-    background: var(--error-bg);
-    border-radius: 0.5rem;
-    padding: 1rem;
-    margin: 0 0 1.5rem;
-  }
-  #error-summary h2 { margin-top: 0; color: var(--error); }
-  #error-summary a { color: var(--error); }
-  button {
-    font: inherit;
-    font-weight: 600;
-    padding: 0.6rem 1.25rem;
-    border-radius: 0.3rem;
-    border: 1px solid var(--accent);
-    background: var(--accent);
-    color: #fff;
-    cursor: pointer;
-  }
-  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
-  summary:focus-visible, [tabindex]:focus-visible {
-    outline: 3px solid var(--accent);
-    outline-offset: 2px;
-  }
-  a { color: var(--accent); }
-  .success {
-    border: 2px solid #1b5e20;
-    background: #e8f5e9;
-    border-radius: 0.5rem;
-    padding: 1rem;
-  }
-</style>
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}Build a Flaming Hydra book{% endblock %}
+
 {#- One labelled input with its hint and its errors, both announced with the field. -#}
 {% macro field(name, label, hint=none, type="text", rows=none, attrs="") -%}
   {%- set errors = result.errors_for(name) -%}
@@ -156,22 +32,13 @@
     <p class="hint" id="{{ name }}-hint">{{ hint }}</p>
   </div>
 {%- endmacro %}
-<main>
+
+{% block main %}
   <h1>Build a Flaming Hydra book</h1>
   <p class="hint">Turns a list of Flaming Hydra posts into an EPUB. Any post the configured
     key can read is fair game, drafts and paid posts included.</p>
 
-  {% if submitted and result.ok %}
-  <div class="success" role="status">
-    <h2>Checks passed</h2>
-    <p>Everything looks good: <strong>{{ result.spec.source.slugs | length }}</strong>
-      post{{ '' if result.spec.source.slugs | length == 1 else 's' }} found, title
-      “{{ result.spec.title }}”.</p>
-    <p>Building isn't wired up yet — that's the next piece.</p>
-  </div>
-  {% else %}
-
-  {% if submitted and not result.ok %}
+  {% if submitted %}
   <div id="error-summary" role="alert" tabindex="-1" autofocus>
     <h2>Fix these before building</h2>
     <ul>
@@ -182,9 +49,8 @@
   </div>
   {% endif %}
 
-  <p>Only the post addresses are required; everything else is optional.</p>
-
   <form method="post" enctype="multipart/form-data" novalidate>
+    <p>Only the post addresses are required; everything else is optional.</p>
     <fieldset>
       <legend>Posts</legend>
 
@@ -291,9 +157,82 @@
       </fieldset>
     </details>
 
-    <button type="submit">Check</button>
+    <p class="hint" id="build-hint">Checks everything first; any problems come back here before
+      anything is built. A book of 40 posts takes about a minute and a half.</p>
+    <button type="submit" aria-describedby="build-hint">Build the book</button>
   </form>
-  {% endif %}
-</main>
-</body>
-</html>
+
+  <section id="progress" hidden aria-labelledby="progress-heading">
+    <h2 id="progress-heading" tabindex="-1">Building your book</h2>
+    <p id="progress-text">Starting…</p>
+    <progress id="progress-bar"></progress>
+    <p class="hint">Keep this page open; the book appears here when it's done.</p>
+    <div id="progress-announcer" class="visually-hidden" role="status" aria-live="polite"></div>
+  </section>
+{% endblock %}
+
+{% block script %}
+<script>
+// Streams progress while building. Without it the form still works: the page waits, then shows the result.
+(() => {
+  const form = document.querySelector("form");
+  if (!form || !window.fetch || !window.TextDecoderStream) return;
+  const panel = document.getElementById("progress");
+  const text = document.getElementById("progress-text");
+  const bar = document.getElementById("progress-bar");
+  const announcer = document.getElementById("progress-announcer");
+
+  function showPage(html) {
+    document.open();
+    document.write(html);
+    document.close();
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const body = new FormData(form);
+    form.hidden = true;
+    document.getElementById("error-summary")?.remove();
+    panel.hidden = false;
+    document.getElementById("progress-heading").focus();
+    try {
+      const response = await fetch(location.pathname, {
+        method: "POST", body, headers: {Accept: "application/x-ndjson"},
+      });
+      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const {value, done} = await reader.read();
+        if (done) break;
+        buffer += value;
+        let end;
+        while ((end = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, end);
+          buffer = buffer.slice(end + 1);
+          if (!line.trim()) continue;
+          const message = JSON.parse(line);
+          if (message.type === "page") return showPage(message.html);
+          text.textContent = message.message;
+          bar.max = message.total;
+          bar.value = message.done;
+          if (message.announce) announcer.textContent = message.message;
+        }
+      }
+      throw new Error("the connection closed before the book was finished");
+    } catch (error) {
+      panel.hidden = true;
+      form.hidden = false;
+      const alert = document.createElement("div");
+      alert.id = "error-summary";
+      alert.setAttribute("role", "alert");
+      alert.tabIndex = -1;
+      alert.innerHTML = "<h2>The build was interrupted</h2><p></p>";
+      alert.querySelector("p").textContent =
+        `${error.message}. Your settings are still in the form (choose the cover again if you had one); try again.`;
+      form.before(alert);
+      alert.focus();
+    }
+  });
+})();
+</script>
+{% endblock %}

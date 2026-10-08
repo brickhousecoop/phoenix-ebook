@@ -4,6 +4,9 @@ Changes that affect how books come out or how phoenix-ebook is used. Existing co
 
 ## Unreleased
 
+### Added
+- **A website for building books** (#23, #24; local for now, see the README's *Website* section): a form with a hint on every field. Every check runs before anything is built, and problems come back to the form. The build shows live progress and ends on a results page with the download link and every warning, grouped by post and explained in the troubleshooting guide's words. For library use, `fetch_posts()` and `build()` take an optional `progress` callback.
+
 ### Changed
 - **Broken links in posts are repaired or unlinked, and every change is reported** (#22): in-post links to sections that don't exist (common in digest contents lists) are pointed at the section they meant, matched by its id or heading; addresses with stray spaces or quotes, `mailto: x`, a missing `https://` or `:`, or characters a link can't contain are fixed; links whose target can't be found, or whose "address" is plain text, lose the link but keep their words; links with no text are removed. Each one is listed after the build with its old and new address, so a wrong repair can be caught.
 - **Flaming Hydra byline headings** (#22): "*by* Name" headings under section titles are now byline paragraphs, centred in small caps like the chapter header's byline, so they no longer count as headings in reading apps' navigation. One at the top of a post that repeats the chapter header's byline is removed.

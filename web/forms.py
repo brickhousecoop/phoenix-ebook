@@ -6,13 +6,14 @@ FastAPI's request objects to the plain values this module works with.
 from __future__ import annotations
 
 from dataclasses import dataclass, field as dc_field
+from typing import Callable
 
 import requests
 
 from phoenix_ebook.epub_builder import fetch_posts, validate_spec
 from phoenix_ebook.errors import PhoenixError
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY, ImageFetchError, validate_image
-from phoenix_ebook.models import BookSpec, SourceSpec
+from phoenix_ebook.models import BookSpec, Post, Progress, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import select_processor
 from phoenix_ebook.secrets import SecretStore, extract_domain
@@ -46,8 +47,9 @@ class RawForm:
     title: str = ""
     subtitle: str = ""
     editor: str = ""
-    cover_path: str | None = None  # already written to disk by the caller
-    cover_bytes: bytes | None = None  # the same cover's raw bytes, for the image/size check
+    cover_path: str | None = None  # written to disk by the caller (see runs.run)
+    cover_bytes: bytes | None = None  # the cover as uploaded, for the image/size check
+    cover_filename: str = ""  # as uploaded; its extension names the temporary file
 
     series: str = ""
     series_number: str = ""
@@ -70,6 +72,7 @@ class RawForm:
 class CheckResult:
     spec: BookSpec | None
     errors: list[FormError] = dc_field(default_factory=list)
+    posts: list[Post] = dc_field(default_factory=list)  # fetched while checking, in reading order
 
     @property
     def ok(self) -> bool:
@@ -193,13 +196,16 @@ def _build_spec(raw: RawForm, slugs: list[str]) -> tuple[BookSpec, list[FormErro
     return spec, errors
 
 
-def check_submission(raw: RawForm) -> CheckResult:
+def check_submission(raw: RawForm, session: requests.Session | None = None,
+                     progress: Callable[[Progress], None] | None = None) -> CheckResult:
     """Build a ``BookSpec`` from ``raw`` and run every pre-build check.
 
     Every problem is reported together in one pass, except that the live
     "does every post exist" check only runs once the post list itself is
-    clean (a bad address list makes fetching meaningless).
+    clean (a bad address list makes fetching meaningless). That check fetches
+    the posts, so a clean result carries them, ready to build.
     """
+    posts: list[Post] = []
     slugs, post_errors = _check_post_list(raw.posts)
     spec, spec_errors = _build_spec(raw, slugs)
     errors = post_errors + spec_errors
@@ -216,8 +222,8 @@ def check_submission(raw: RawForm) -> CheckResult:
         try:
             platform = get_platform(spec.source.platform)
             secret = SecretStore().get(spec.source.platform, extract_domain(spec.source.url))
-            fetch_posts(spec.source, platform, secret, requests.Session())
+            posts = fetch_posts(spec.source, platform, secret, session or requests.Session(), progress)
         except PhoenixError as exc:
             errors.append(FormError(exc.field, str(exc)))
 
-    return CheckResult(spec=spec, errors=errors)
+    return CheckResult(spec=spec, errors=errors, posts=posts)

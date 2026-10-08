@@ -220,7 +220,7 @@ In a manifest: `css = "my-styles.css"` under a `[style]` table.
 
 ## Website
 
-A FastAPI app in `web/` turns the same form into a `BookSpec` and runs every pre-build check (missing/duplicate posts, more than 100 posts, `validate_spec()`, a cover under 4.5 MB), so you can build a book without the command line. It's local-only for now — no build step yet, see [ADR 0002](docs/adr/0002-website-on-vercel-calls-the-library.md).
+A FastAPI app in `web/` builds books from a form, without the command line; see [ADR 0002](docs/adr/0002-website-on-vercel-calls-the-library.md). Submitting the form checks everything first (missing or duplicate posts, more than 100 posts, ISBN/ISSN, a cover under 4.5 MB) and sends any problems back to the form. Then it builds the book, showing progress as it goes, and ends on a results page with the download link and every warning from the build, grouped by post and explained.
 
 Install its extra dependencies and run it:
 
@@ -229,7 +229,11 @@ uv pip install --python .venv/bin/python -r requirements-web.txt
 .venv/bin/uvicorn web.main:app --reload
 ```
 
-Then open <http://127.0.0.1:8000>. It uses the same secret lookup as the CLI (see "Store your API key" above).
+Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command line (see "Store your API key" above).
+
+**Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. Either way the link contains a random part that can't be guessed, and nothing expires yet.
+
+**Closing the tab mid-build** doesn't stop the build when running locally: it runs to the end and saves the book, but the link is never shown, so build it again. Whether Vercel keeps it running is to be checked when deploying (#27).
 
 ## Extending phoenix-ebook
 

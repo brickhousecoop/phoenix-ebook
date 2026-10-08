@@ -97,6 +97,23 @@ class BuildProblem:
 
 
 @dataclass
+class Progress:
+    """One step of a build, passed to the optional ``progress`` callback of
+    ``fetch_posts()`` and ``build()``.
+
+    ``stage`` is "fetch" (one per post, after it's fetched), "post" (one per
+    chapter, before its images and link cards are fetched) or "write" (once,
+    before the EPUB is written). ``done`` counts from 1 to ``total``; ``title``
+    is the post's title where there is one.
+    """
+
+    stage: str
+    done: int
+    total: int
+    title: str | None = None
+
+
+@dataclass
 class BuildResult:
     """What ``build()`` returns: the EPUB's path and any non-fatal problems."""
 

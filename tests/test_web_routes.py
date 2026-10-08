@@ -13,7 +13,7 @@ from conftest import FakeResponse, FakeSession, jpeg, png
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.secrets import env_var_name
-from web import forms
+from web import forms, storage
 from web.main import app
 
 KEY_ENV = env_var_name("ghost", "flaminghydra.ghost.io")
@@ -23,6 +23,14 @@ ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def books_dir(monkeypatch, tmp_path):
+    """Books built by these tests are saved under the test's own folder."""
+    monkeypatch.delenv(storage.BLOB_TOKEN_ENV, raising=False)
+    monkeypatch.setattr(storage, "LOCAL_DIR", tmp_path / "books")
+    return tmp_path / "books"
 
 
 def _post_body(slug: str) -> bytes:
@@ -109,14 +117,13 @@ def test_post_without_errors_does_not_show_advanced_open(client, monkeypatch):
 
 # ---------------------------------------------------------------- POST success placeholder
 
-def test_post_checks_pass_shows_placeholder(client, monkeypatch):
+def test_post_that_passes_checks_builds_and_shows_results(client, monkeypatch):
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     _wire_fake_posts(monkeypatch, "good")
     r = client.post("/", data={"posts": "good", "title": "My Book"})
     assert r.status_code == 200
-    assert "Checks passed" in r.text
+    assert "Your book is ready" in r.text
     assert "My Book" in r.text
-    assert "isn&#39;t wired up yet" in r.text or "isn't wired up yet" in r.text
     assert "<form" not in r.text
 
 
@@ -146,7 +153,7 @@ def test_post_with_valid_cover_passes(client, monkeypatch):
     _wire_fake_posts(monkeypatch, "good")
     r = client.post("/", data={"posts": "good", "title": "T"},
                      files={"cover": ("c.png", io.BytesIO(png()), "image/png")})
-    assert "Checks passed" in r.text
+    assert "Your book is ready" in r.text
 
 
 def test_cover_temp_file_is_cleaned_up(client, monkeypatch, tmp_path):

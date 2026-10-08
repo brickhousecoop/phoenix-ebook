@@ -1,26 +1,33 @@
-"""The book-building website: a form, pre-build checks, nothing else yet (see ADR 0002).
+"""The book-building website: form, checks, build with live progress, results (ADR 0002).
 
 Run locally with ``uvicorn web.main:app --reload`` from the repo root.
 """
 from __future__ import annotations
 
-import os
-import tempfile
+import json
+import queue
+import threading
 from datetime import date
 from pathlib import Path
+from typing import Iterator
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
+from phoenix_ebook.models import Progress
 
-from web.forms import MAX_POSTS, CheckResult, RawForm, check_submission
+from web import problems, storage
+from web.forms import MAX_POSTS, CheckResult, RawForm
+from web.runs import Outcome, describe, run
 
 app = FastAPI()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
+STREAM_TYPE = "application/x-ndjson"
 ADVANCED_FIELDS = {
     "series", "series_number", "publisher", "description", "pub_date", "lang", "isbn", "issn",
     "rights", "image_max_width", "image_quality", "keep_original_images", "placeholders",
@@ -28,26 +35,70 @@ ADVANCED_FIELDS = {
 }
 
 
-def _render(request: Request, *, raw: RawForm, result: CheckResult, submitted: bool) -> HTMLResponse:
-    advanced_open = any(e.field in ADVANCED_FIELDS for e in result.errors)
-    return templates.TemplateResponse(request, "index.html", {
-        "raw": raw,
-        "result": result,
-        "submitted": submitted,
-        "advanced_open": advanced_open,
-        "max_posts": MAX_POSTS,
-        "placeholder_pages": PLACEHOLDER_TEXT,
-    })
+def _form_page(raw: RawForm, result: CheckResult) -> str:
+    return templates.get_template("index.html").render(
+        raw=raw,
+        result=result,
+        submitted=bool(result.errors),
+        advanced_open=any(e.field in ADVANCED_FIELDS for e in result.errors),
+        max_posts=MAX_POSTS,
+        placeholder_pages=PLACEHOLDER_TEXT,
+    )
+
+
+def _outcome_page(raw: RawForm, outcome: Outcome) -> str:
+    if not outcome.built:
+        return _form_page(raw, outcome.check)
+    groups = problems.group_by_post(outcome.problems, outcome.check.posts)
+    return templates.get_template("results.html").render(
+        spec=outcome.check.spec,
+        url=outcome.url,
+        groups=groups,
+        kinds=[problems.kind(code) for code in dict.fromkeys(p.kind for p in outcome.problems)],
+        counts={code: sum(p.kind == code for p in outcome.problems) for code in {p.kind for p in outcome.problems}},
+        kind=problems.kind,
+    )
+
+
+def _announce(step: Progress) -> bool:
+    """Whether screen readers hear this step: each stage's start and end, and every tenth post."""
+    return step.done in (1, step.total) or step.done % 10 == 0
+
+
+def _stream(raw: RawForm) -> Iterator[str]:
+    """Progress lines, then the final page, as newline-delimited JSON.
+
+    The build runs in its own thread so a closed tab doesn't stop it: it
+    finishes and saves the book, which nobody then downloads.
+    """
+    events: queue.Queue = queue.Queue()
+
+    def work() -> None:
+        try:
+            events.put(("page", _outcome_page(raw, run(raw, lambda step: events.put(("progress", step))))))
+        except Exception:  # rendering failed; run() itself never raises
+            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]))))
+            raise
+
+    threading.Thread(target=work, daemon=True).start()
+    while True:
+        kind, value = events.get()
+        if kind == "progress":
+            yield json.dumps({"type": "progress", "message": describe(value), "done": value.done,
+                              "total": value.total, "announce": _announce(value)}) + "\n"
+        else:
+            yield json.dumps({"type": "page", "html": value}) + "\n"
+            return
 
 
 @app.get("/", response_class=HTMLResponse)
-async def form(request: Request) -> HTMLResponse:
+async def form() -> HTMLResponse:
     # The server's date, which on Vercel is UTC; see #29.
     raw = RawForm(pub_date=date.today().isoformat())
-    return _render(request, raw=raw, result=CheckResult(spec=None), submitted=False)
+    return HTMLResponse(_form_page(raw, CheckResult(spec=None)))
 
 
-@app.post("/", response_class=HTMLResponse)
+@app.post("/")
 async def submit(
     request: Request,
     posts: str = Form(""),
@@ -70,33 +121,28 @@ async def submit(
     placeholders: str | None = Form(None),
     sort_names: str = Form(""),
     alt_text: str = Form(""),
-) -> HTMLResponse:
-    cover_bytes: bytes | None = None
-    cover_path: str | None = None
-    if cover is not None and cover.filename:
-        cover_bytes = await cover.read()
+):
+    has_cover = cover is not None and bool(cover.filename)
+    raw = RawForm(
+        posts=posts, title=title, subtitle=subtitle, editor=editor,
+        cover_bytes=(await cover.read() or None) if has_cover else None,
+        cover_filename=cover.filename if has_cover else "",
+        series=series, series_number=series_number, publisher=publisher, description=description,
+        pub_date=pub_date, lang=lang or "en", isbn=isbn, issn=issn, rights=rights,
+        image_max_width=image_max_width, image_quality=image_quality,
+        keep_original_images=keep_original_images is not None,
+        placeholders=placeholders is not None,
+        sort_names=sort_names, alt_text=alt_text,
+    )
+    if STREAM_TYPE in request.headers.get("accept", ""):
+        return StreamingResponse(_stream(raw), media_type=STREAM_TYPE)
+    outcome = await run_in_threadpool(run, raw)
+    return HTMLResponse(_outcome_page(raw, outcome))
 
-    tmp_handle = None
-    try:
-        if cover_bytes:
-            suffix = Path(cover.filename).suffix or ".bin"
-            tmp_handle = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-            tmp_handle.write(cover_bytes)
-            tmp_handle.close()
-            cover_path = tmp_handle.name
 
-        raw = RawForm(
-            posts=posts, title=title, subtitle=subtitle, editor=editor,
-            cover_path=cover_path, cover_bytes=cover_bytes,
-            series=series, series_number=series_number, publisher=publisher, description=description,
-            pub_date=pub_date, lang=lang or "en", isbn=isbn, issn=issn, rights=rights,
-            image_max_width=image_max_width, image_quality=image_quality,
-            keep_original_images=keep_original_images is not None,
-            placeholders=placeholders is not None,
-            sort_names=sort_names, alt_text=alt_text,
-        )
-        result = check_submission(raw)
-        return _render(request, raw=raw, result=result, submitted=True)
-    finally:
-        if tmp_handle is not None:
-            os.unlink(tmp_handle.name)
+@app.get(storage.LOCAL_URL_PREFIX + "/{token}/{name}")
+async def local_book(token: str, name: str) -> FileResponse:
+    path = storage.local_book(f"{token}/{name}")
+    if path is None:
+        raise HTTPException(404)
+    return FileResponse(path, media_type=storage.EPUB_TYPE, filename=name)

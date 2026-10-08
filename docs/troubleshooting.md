@@ -92,17 +92,23 @@ Each warning gives the image's URL and the reason: an HTTP error, a timeout, or 
 ### `image-missing-alt`
 
 **`N images have no alt text`**
-Screen readers can't describe these images, and the book can't claim "text descriptions for images" in its accessibility metadata. The build prints a ready-made `[alt_text]` block after the warnings: paste it into your manifest and write a short description for each image (or leave `""` for an image that's purely decorative). Better still, add the alt text in Ghost, so the website benefits too. See the README's *Alt text* section for how to write it.
+Screen readers can't describe these images, and the book can't claim "text descriptions for images" in its accessibility metadata. Best of all, add the alt text in Ghost, so the website benefits too.
+
+On the command line, the build prints a ready-made `[alt_text]` block after the warnings: paste it into your manifest and write a short description for each image (or leave `""` for an image that's purely decorative). See the README's *Alt text* section for how to write it.
 
 ### `image-suspicious-alt`
 
 **`N images have alt text that looks unhelpful`**
-The alt text is a file name (`IMG_5799.jpg`), a generic word ("image"), or a copy of the caption (read twice by screen readers). These are included in the `[alt_text]` block; replace them with a description.
+The alt text is a file name (`IMG_5799.jpg`), a generic word ("image"), or a copy of the caption (read twice by screen readers). Replace it with a description of the image.
+
+On the command line, these are included in the `[alt_text]` block.
 
 ### `alt-override-unused`
 
 **`N [alt_text] entries match no image in the book`**
-An `[alt_text]` entry in your manifest names an image URL that isn't in this book: a typo, an image removed from the post, or a post no longer in the slug list. Copy the URL again from the build's `[alt_text]` block, or delete the entry.
+An alt-text entry names an image URL that isn't in this book: a typo, an image removed from the post, or a post no longer in the list. Copy the URL again, or delete the entry.
+
+On the command line, the entry is in your manifest's `[alt_text]` table, and the build's `[alt_text]` block has each image's exact URL.
 
 ### `call-to-action`
 

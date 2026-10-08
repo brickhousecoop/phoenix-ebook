@@ -10,7 +10,7 @@ import re
 import uuid
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -26,7 +26,7 @@ from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD
 from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError, PostNotFound
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
-from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post, SourceSpec
+from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post, Progress, SourceSpec
 from phoenix_ebook.platforms.base import Platform
 from phoenix_ebook.processors.base import HtmlProcessor
 
@@ -233,21 +233,26 @@ def _check_output_path(output: str) -> None:
         raise OutputError(f"can't write {output}: it's a folder; give a file name ending in .epub")
 
 
-def fetch_posts(source: SourceSpec, platform: Platform, secret: str, session: requests.Session) -> list[Post]:
+def fetch_posts(source: SourceSpec, platform: Platform, secret: str, session: requests.Session,
+                progress: Callable[[Progress], None] | None = None) -> list[Post]:
     """Fetch every slug in ``source`` from ``platform``, in order.
 
     Tries every slug so a batch of typos is reported together: raises one
     ``PostNotFound`` listing every missing slug once all have been tried.
     Other errors (auth, network) stop immediately. Shared by the CLI and the
-    website so both report missing posts the same way.
+    website so both report missing posts the same way. ``progress`` is called
+    after each post (stage "fetch"; see ``Progress``).
     """
     posts, missing, site = [], [], source.url
-    for slug in source.slugs:
+    for done, slug in enumerate(source.slugs, start=1):
         try:
             posts.append(platform.fetch_post(session, source.url, secret, slug))
         except PostNotFound as exc:
             missing.extend(exc.slugs)
             site = exc.site
+        if progress:
+            title = posts[-1].title if posts and posts[-1].slug == slug else None
+            progress(Progress("fetch", done, len(source.slugs), title))
     if missing:
         raise PostNotFound(site, missing)
     return posts
@@ -655,6 +660,7 @@ def build(
     session: requests.Session | None = None,
     image_base_url: str = "",
     platform: "Platform | None" = None,
+    progress: Callable[[Progress], None] | None = None,
 ) -> BuildResult:
     """Assemble an EPUB from already-fetched posts.
 
@@ -662,6 +668,8 @@ def build(
     reported in BuildResult.problems; they never fail the build. ``platform``
     supplies platform-specific image-URL rules (e.g. Ghost's size variants) for
     matching alt-text overrides; without it the generic rule is used.
+    ``progress`` is called as each chapter starts (stage "post") and before the
+    EPUB is written (stage "write"); see ``Progress``.
     """
     validate_spec(spec)
     posts = list(posts)
@@ -749,6 +757,8 @@ def build(
 
     # ---- Chapters ----
     for chapter_number, post in enumerate(posts, start=1):
+        if progress:
+            progress(Progress("post", chapter_number, len(posts), post.title))
         chapter_slug = sanitize_filename(post.slug)
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
@@ -882,5 +892,7 @@ def build(
 
     _add_accessibility_metadata(book, spec, image_tally, has_animation)
 
+    if progress:
+        progress(Progress("write", 1, 1))
     _write_atomically(spec.output, book)
     return BuildResult(path=spec.output, problems=problems)

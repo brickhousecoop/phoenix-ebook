@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Your book is ready{% endblock %}
+
+{% block style %}
+  .download {
+    display: inline-block;
+    font-weight: 600;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.3rem;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+  }
+  .download:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .summary-list { padding-left: 1.25rem; }
+  .post-problems { border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 1.25rem; }
+  .post-problems h3 { margin: 0.5rem 0; }
+  .problem { margin: 0 0 0.75rem; }
+  .problem-kind { font-weight: 600; }
+  .problem-where { color: var(--muted); }
+  .problem-url { overflow-wrap: anywhere; font-size: 0.9rem; }
+  .meaning { margin-bottom: 1.25rem; }
+  .meaning h3 { margin-bottom: 0.25rem; }
+{% endblock %}
+
+{% block main %}
+  <h1 tabindex="-1" autofocus>Your book is ready</h1>
+  <p><a class="download" href="{{ url }}" download>Download “{{ spec.title }}” (EPUB)</a></p>
+  <p class="hint">{{ spec.source.slugs | length }} post{{ '' if spec.source.slugs | length == 1 else 's' }}.
+    Keep the link if you want the book again later: anyone with it can download the book.</p>
+  <p><a href="/">Build another book</a></p>
+
+  {% if groups %}
+  <h2>What the build changed or couldn’t do</h2>
+  <p>The book works as it is. These are worth a look:</p>
+  <ul class="summary-list">
+    {% for k in kinds %}
+    <li><a href="#about-{{ k.code }}">{{ k.label }}</a>: {{ counts[k.code] }}</li>
+    {% endfor %}
+  </ul>
+
+  {% for group in groups %}
+  <section class="post-problems" aria-labelledby="post-{{ loop.index }}">
+    <h3 id="post-{{ loop.index }}">{{ group.title }}</h3>
+    <ul>
+      {% for p in group.problems %}
+      {% set label = kind(p.kind).label %}
+      <li class="problem">
+        <span class="problem-kind">{{ label }}</span>{% if p.location %}
+        <span class="problem-where">({{ p.location }})</span>{% endif %}
+        {%- if p.detail | lower != label | lower %}: {{ p.detail }}{% endif %}
+        {%- if p.caption %} — caption: “{{ p.caption }}”{% endif %}
+        {% if p.url %}<br><span class="problem-url">{{ p.url }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+
+  <h2>What these mean</h2>
+  {% for k in kinds %}
+  <div class="meaning" id="about-{{ k.code }}">
+    <h3>{{ k.label }}</h3>
+    <p>{{ k.meaning | safe }} <a href="{{ k.more_url }}">More in the troubleshooting guide</a></p>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p>Nothing to report: the build had no warnings.</p>
+  {% endif %}
+{% endblock %}
