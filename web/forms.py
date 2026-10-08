@@ -6,6 +6,7 @@ FastAPI's request objects to the plain values this module works with.
 from __future__ import annotations
 
 import re
+import tempfile
 from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Callable, Mapping
@@ -271,6 +272,9 @@ def _build_spec(raw: RawForm, slugs: list[str]) -> tuple[BookSpec, list[FormErro
         optimize_images=not raw.keep_original_images,
         image_max_width=image_max_width,
         image_quality=image_quality,
+        # Somewhere writable for validate_spec's check (the app's folder is read-only on Vercel);
+        # runs.run gives the real build its own temporary folder.
+        output=str(Path(tempfile.gettempdir()) / "book.epub"),
         source=source,
     )
     return spec, errors

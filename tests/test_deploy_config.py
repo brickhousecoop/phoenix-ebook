@@ -63,3 +63,14 @@ def test_locally_and_with_blob_there_is_no_setup_problem(monkeypatch):
     monkeypatch.setenv("VERCEL", "1")
     monkeypatch.setenv(storage.BLOB_TOKEN_ENV, "vercel_blob_rw_x")
     assert storage.setup_problem() is None
+
+
+def test_checks_pass_when_the_apps_own_folder_is_read_only(monkeypatch, tmp_path):
+    """On Vercel the deployed code's folder can't be written; only the temporary folder can."""
+    from web.forms import RawForm, check_submission
+    read_only = tmp_path / "task"
+    read_only.mkdir()
+    read_only.chmod(0o555)
+    monkeypatch.chdir(read_only)
+    result = check_submission(RawForm(posts="anything"))  # no key stored: fails, but not on the output folder
+    assert not any("can't write" in e.message for e in result.errors), result.errors
