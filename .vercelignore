@@ -1,0 +1,9 @@
+# What `vercel deploy` uploads: only what the website needs. Everything else in the
+# working folder (local notes, keys, test books, .venv, screenshots) stays behind.
+/*
+!/web
+!/phoenix_ebook
+!/docs
+!/pyproject.toml
+!/vercel.json
+**/__pycache__

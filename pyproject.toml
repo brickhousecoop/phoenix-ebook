@@ -1,0 +1,24 @@
+# For Vercel, which deploys the website (web/) from this file; see docs/website-setup.md.
+# The command line installs from requirements.txt (see the README). The dependencies here are
+# requirements-web.txt spelled out; a test keeps the two in step.
+[project]
+name = "phoenix-ebook"
+version = "0"
+requires-python = ">=3.14"
+dependencies = [
+    "requests>=2.32",
+    "beautifulsoup4>=4.13",
+    "EbookLib>=0.20",
+    "Pillow>=12.0",
+    "keyring>=25.0",
+    "markdown-it-py>=3.0",
+    "mammoth>=1.8",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "vercel>=0.11",
+]
+
+[tool.vercel]
+entrypoint = "web.main:app"

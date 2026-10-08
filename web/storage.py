@@ -23,6 +23,15 @@ LOCAL_DIR = Path(os.environ.get("PHOENIX_BOOKS_DIR") or Path(tempfile.gettempdir
 LOCAL_URL_PREFIX = "/books"
 
 
+def setup_problem() -> str | None:
+    """Why books can't be stored right now, or None. On Vercel the local folder vanishes with the
+    function, so Blob is required there; Vercel sets ``VERCEL=1`` in its functions."""
+    if os.environ.get("VERCEL") and not os.environ.get(BLOB_TOKEN_ENV):
+        return (f"This site isn't connected to its Blob store ({BLOB_TOKEN_ENV} isn't set), so a book couldn't "
+                "be saved for download. Whoever runs the site: see docs/website-setup.md, “Blob store”.")
+    return None
+
+
 def download_name(title: str) -> str:
     """'Flaming Hydra: September 2026' -> 'Flaming-Hydra-September-2026.epub'."""
     stem = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-")[:80]

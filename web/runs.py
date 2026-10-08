@@ -17,7 +17,7 @@ from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
 from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, check_submission
-from web.storage import load_upload, new_folder, save_book, save_upload
+from web.storage import load_upload, new_folder, save_book, save_upload, setup_problem
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +59,8 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
     is refilled from ``raw``. Uploads (new, or kept from the last build) live in
     a temporary folder for the whole run, deleted at the end however it ends.
     """
+    if problem := setup_problem():
+        return Outcome(CheckResult(spec=None, errors=[FormError(None, problem)]))
     session = session or requests.Session()
     try:
         with tempfile.TemporaryDirectory() as uploads:
