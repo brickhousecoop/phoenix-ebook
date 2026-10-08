@@ -21,8 +21,34 @@
     document.close();
   }
 
+  // Vercel refuses requests over 4.5 MB before the site sees them; leave room for the rest of the form.
+  const UPLOAD_LIMIT = 4.4e6;
+
+  function showAlert(heading, message) {
+    document.getElementById("error-summary")?.remove();
+    const alert = document.createElement("div");
+    alert.id = "error-summary";
+    alert.setAttribute("role", "alert");
+    alert.tabIndex = -1;
+    alert.innerHTML = "<h2></h2><p></p>";
+    alert.querySelector("h2").textContent = heading;
+    alert.querySelector("p").textContent = message;
+    form.before(alert);
+    alert.focus();
+  }
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    let total = 0;
+    for (const input of form.querySelectorAll('input[type="file"]')) {
+      for (const file of input.files) total += file.size;
+    }
+    if (total > UPLOAD_LIMIT) {
+      showAlert("Your files are too big to send together",
+        `The files you chose add up to ${(total / 1e6).toFixed(1)} MB; the website takes at most ` +
+        `${(UPLOAD_LIMIT / 1e6).toFixed(1)} MB at once. Use a smaller cover image, or fewer or smaller files.`);
+      return;
+    }
     const body = new FormData(form);
     form.hidden = true;
     document.getElementById("error-summary")?.remove();
@@ -55,15 +81,8 @@
     } catch (error) {
       panel.hidden = true;
       form.hidden = false;
-      const alert = document.createElement("div");
-      alert.id = "error-summary";
-      alert.setAttribute("role", "alert");
-      alert.tabIndex = -1;
-      alert.innerHTML = "<h2>The build was interrupted</h2><p></p>";
-      alert.querySelector("p").textContent =
-        `${error.message}. Your settings are still in the form (choose the cover again if you had one); try again.`;
-      form.before(alert);
-      alert.focus();
+      showAlert("The build was interrupted",
+        `${error.message}. Your settings are still in the form; try again.`);
     }
   });
 })();

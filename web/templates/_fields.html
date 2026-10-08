@@ -29,3 +29,16 @@
     <p class="hint" id="{{ name }}-hint">{{ hint }}</p>
   </div>
 {%- endmacro %}
+
+{#- A file field, plus a ticked "keep" box when the last submission left this file in storage. -#}
+{% macro upload(name, label, hint, accept) -%}
+  {{ field(name, label, hint, type="file", attrs='accept="' ~ accept ~ '"') }}
+  {% if raw.kept.get(name) %}
+  <div class="checkbox">
+    <input type="checkbox" id="kept_{{ name }}" name="kept_{{ name }}" value="{{ raw.kept[name] }}" checked
+      aria-describedby="kept_{{ name }}-hint">
+    <label for="kept_{{ name }}">Keep {{ raw.kept[name].rsplit("/", 1)[-1] }} from last time</label>
+    <p class="hint" id="kept_{{ name }}-hint">Choosing a new file above replaces it; untick this to leave it out.</p>
+  </div>
+  {% endif %}
+{%- endmacro %}

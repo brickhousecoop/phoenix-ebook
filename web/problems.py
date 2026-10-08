@@ -27,6 +27,7 @@ LABELS = {
     "link-repaired": "Link repaired",
     "link-unlinked": "Broken link",
     "link-empty-removed": "Empty link removed",
+    "content-image-left-out": "Images left out of a content page",
 }
 
 

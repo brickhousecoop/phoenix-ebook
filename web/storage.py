@@ -40,7 +40,7 @@ def save_book(path: str, title: str, folder: str) -> str:
 
 
 def save_upload(path: str, name: str, folder: str) -> str:
-    """Keep an uploaded file (e.g. the cover) in ``folder``; a reference for ``load_upload``."""
+    """Keep an uploaded file in ``folder`` as ``name`` ('<field>/<file name>'); a reference for ``load_upload``."""
     return _save(path, f"{folder}/uploads/{name}", None)
 
 
@@ -50,16 +50,16 @@ def load_upload(ref: str) -> tuple[bytes, str] | None:
     name = parts.path.rsplit("/", 1)[-1]
     if not parts.scheme and ref.startswith(LOCAL_URL_PREFIX + "/"):
         path = local_book(ref[len(LOCAL_URL_PREFIX) + 1:])
-        return (path.read_bytes(), name) if path and path.parent.name == "uploads" else None
+        return (path.read_bytes(), name) if path and path.parent.parent.name == "uploads" else None
     if parts.scheme == "https" and parts.hostname and parts.hostname.endswith(BLOB_HOST_SUFFIX) \
-            and re.fullmatch(r"/books/[\w-]+/uploads/[^/]+", parts.path):
+            and re.fullmatch(r"/books/[\w-]+/uploads/[a-z_]+/[^/]+", parts.path):
         response = requests.get(ref, timeout=30)
         return (response.content, name) if response.status_code == 200 else None
     return None
 
 
 def local_book(key: str) -> Path | None:
-    """The locally saved file for ``key`` ('<folder>/<name>' or '<folder>/uploads/<name>'), or None."""
+    """The locally saved file for ``key`` ('<folder>/<name>' or '<folder>/uploads/<field>/<name>'), or None."""
     target = (LOCAL_DIR / key).resolve()
     if LOCAL_DIR.resolve() not in target.parents or not target.is_file():
         return None

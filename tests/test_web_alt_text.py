@@ -157,7 +157,7 @@ def test_rebuild_keeps_the_cover(built_specs):
     page = client.post("/", data={"posts": "p", "title": "Covered"},
                        files={"cover": ("c.png", io.BytesIO(png("blue")), "image/png")}).text
     ref = re.search(r'name="kept_cover" value="([^"]+)"', page)[1]
-    assert ref.startswith("/books/") and "/uploads/cover.png" in ref
+    assert ref.startswith("/books/") and ref.endswith("/uploads/cover/c.png")
 
     rebuilt = client.post("/", data=rebuild_data(page, {})).text
     assert "Your book is ready" in rebuilt
@@ -171,8 +171,8 @@ def test_rebuild_keeps_the_cover(built_specs):
 
 
 def test_a_missing_kept_cover_is_a_form_error():
-    page = TestClient(app).post("/", data={"posts": "p", "kept_cover": "/books/nope/uploads/cover.png"}).text
-    assert "the cover from the last build couldn" in page and 'id="error-summary"' in page
+    page = TestClient(app).post("/", data={"posts": "p", "kept_cover": "/books/nope/uploads/cover/c.png"}).text
+    assert "Cover image: the file from the last build couldn" in page and 'id="error-summary"' in page
 
 
 @pytest.mark.parametrize("ref", [

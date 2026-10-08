@@ -63,7 +63,7 @@ def test_get_form_advanced_section_closed_by_default(client):
 def test_every_field_has_a_hint_read_with_it(client):
     html = client.get("/").text
     names = re.findall(r'<(?:input|textarea)[^>]*\bname="([^"]+)"', html)
-    assert len(names) == 20
+    assert len(names) == 27
     for name in names:
         assert f'id="{name}-hint"' in html, name
         assert re.search(rf'id="{name}"[^>]*aria-describedby="{name}-hint', html, re.S), name
@@ -163,8 +163,8 @@ def test_cover_temp_file_is_cleaned_up(client, monkeypatch, tmp_path):
     real_build_spec = forms._build_spec
 
     def spying_build_spec(raw, slugs):
-        if raw.cover_path:
-            seen_paths.append(raw.cover_path)
+        if raw.paths.get("cover"):
+            seen_paths.append(raw.paths["cover"])
         return real_build_spec(raw, slugs)
 
     monkeypatch.setattr(forms, "_build_spec", spying_build_spec)

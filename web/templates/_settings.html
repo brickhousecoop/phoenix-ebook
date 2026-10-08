@@ -1,5 +1,5 @@
 {#- The form's fields, shared by the form page and the results page's "Change settings". -#}
-{% from "_fields.html" import field, checkbox with context %}
+{% from "_fields.html" import field, checkbox, upload with context %}
     <fieldset>
       <legend>Posts</legend>
 
@@ -19,17 +19,8 @@
           "Who compiled the book; credited as its creator (e.g., The Phoenix Editorial Colony). "
           ~ "Post authors become contributors.") }}
 
-      {{ field("cover", "Cover image",
-          "JPEG, PNG, GIF or WebP, under 4.5 MB. Without one, reading apps show their own.",
-          type="file", attrs='accept="image/*"') }}
-      {% if raw.kept_cover %}
-      <div class="checkbox">
-        <input type="checkbox" id="kept_cover" name="kept_cover" value="{{ raw.kept_cover }}" checked
-          aria-describedby="kept_cover-hint">
-        <label for="kept_cover">Keep the cover from the last build</label>
-        <p class="hint" id="kept_cover-hint">Choosing a new cover above replaces it; untick this for no cover.</p>
-      </div>
-      {% endif %}
+      {{ upload("cover", "Cover image",
+          "JPEG, PNG, GIF or WebP, under 4.5 MB. Without one, reading apps show their own.", "image/*") }}
     </fieldset>
 
     <details {% if advanced_open %}open{% endif %}>
@@ -81,10 +72,31 @@
       </fieldset>
 
       <fieldset>
+        <legend>Content pages</legend>
+        <p class="hint">Pages of your own around the posts. Each takes a Word file (.docx), Markdown (.md), plain
+          text (.txt, one paragraph per line) or HTML (.html). A page that doesn’t start with a heading gets one
+          (e.g., “Foreword”).</p>
+        {% set formats = ".docx,.md,.txt,.html" %}
+        {% set placeholder = " If you don’t upload one, a placeholder page goes in its place (unless you untick "
+                             ~ "“Add placeholder pages” below)." %}
+        {{ upload("copyright_file", "Copyright", "The copyright notice, after the title page." ~ placeholder, formats) }}
+        {{ upload("imprint_file", "Imprint", "Publisher, edition and printing history." ~ placeholder, formats) }}
+        {{ upload("foreword_file", "Foreword", "Remarks by a guest writer, after the contents." ~ placeholder,
+                  formats) }}
+        {{ upload("intro_file", "Introduction",
+                  "The editor’s introduction, after the foreword. Left out if you don’t upload one.", formats) }}
+        {{ upload("notes_file", "Notes", "Endnotes and references, after the posts." ~ placeholder, formats) }}
+        {{ upload("acknowledgements_file", "Acknowledgements", "Thank-yous and credits, after the posts." ~ placeholder,
+                  formats) }}
+        {{ upload("about_file", "About This Book", "Production credits, sources and rights, at the end." ~ placeholder,
+                  formats) }}
+      </fieldset>
+
+      <fieldset>
         <legend>Book structure</legend>
 
         {{ checkbox("placeholders", "Add placeholder pages",
-            "Adds six draft pages to the book, to replace with your own text later.") }}
+            "Adds a draft page, to replace later, for each of these sections you don’t upload a page for.") }}
 
         <details class="preview">
           <summary>What placeholder pages look like</summary>

@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field as dc_field
+from pathlib import Path
 from typing import Callable, Mapping
 
 import requests
 
+from phoenix_ebook.content import FORMATS, check_content_file, load_content
 from phoenix_ebook.epub_builder import fetch_posts, validate_spec
 from phoenix_ebook.errors import PhoenixError
 from phoenix_ebook.images import DEFAULT_MAX_WIDTH, DEFAULT_QUALITY, ImageFetchError, validate_image
@@ -18,6 +20,19 @@ from phoenix_ebook.models import BookSpec, Post, Progress, SourceSpec
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import select_processor
 from phoenix_ebook.secrets import SecretStore, extract_domain
+
+# BookSpec field -> what the form calls it. The cover first, then the content pages in reading order.
+UPLOAD_FIELDS = {
+    "cover": "Cover image",
+    "copyright_file": "Copyright",
+    "imprint_file": "Imprint",
+    "foreword_file": "Foreword",
+    "intro_file": "Introduction",
+    "notes_file": "Notes",
+    "acknowledgements_file": "Acknowledgements",
+    "about_file": "About This Book",
+}
+CONTENT_FIELDS = tuple(UPLOAD_FIELDS)[1:]
 
 PLATFORM = "ghost"
 SITE_URL = "https://flaminghydra.ghost.io"
@@ -36,7 +51,7 @@ class FormError:
 
 @dataclass
 class RawForm:
-    """The submitted field values, as strings (and the cover, already saved to disk).
+    """The submitted field values, as strings, plus the uploaded files.
 
     Mirrors ``BookSpec`` field-for-field (the "simple" fields plus everything
     under "advanced"); see ``build_epub.py``'s ``_spec_from_args`` for the CLI's
@@ -48,10 +63,11 @@ class RawForm:
     title: str = ""
     subtitle: str = ""
     editor: str = ""
-    cover_path: str | None = None  # written to disk by the caller (see runs.run)
-    cover_bytes: bytes | None = None  # the cover as uploaded, for the image/size check
-    cover_filename: str = ""  # as uploaded; its extension names the temporary file
-    kept_cover: str = ""  # the last build's cover, kept in storage (see storage.save_upload); used if no new one
+    # Uploads, by BookSpec field (see UPLOAD_FIELDS): (bytes, file name) as uploaded; files kept from the
+    # last build (storage references, used when there's no new upload); where runs.run wrote them to disk.
+    files: dict[str, tuple[bytes, str]] = dc_field(default_factory=dict)
+    kept: dict[str, str] = dc_field(default_factory=dict)
+    paths: dict[str, str] = dc_field(default_factory=dict)
 
     series: str = ""
     series_number: str = ""
@@ -193,6 +209,22 @@ def _check_cover_bytes(data: bytes) -> list[FormError]:
     return errors
 
 
+def _check_content_upload(field: str, name: str, path: str | None) -> list[FormError]:
+    """A content-page upload: a format the website takes, readable, and convertible."""
+    label = UPLOAD_FIELDS[field]
+    suffix = Path(name).suffix.lower()
+    if suffix not in FORMATS:
+        kind = f"{suffix} files" if suffix else "files without an extension"
+        return [FormError(field, f"{label}: {name}: {kind} can't be used; save it as a Word (.docx), "
+                                 "Markdown (.md), plain text (.txt) or HTML (.html) file")]
+    try:
+        check_content_file(path, label, field, shown_as=name)
+        load_content(path, label)
+    except PhoenixError as exc:
+        return [FormError(field, str(exc))]
+    return []
+
+
 def _int_field(raw: RawForm, field: str, default: int) -> tuple[int, FormError | None]:
     text = getattr(raw, field).strip()
     if not text:
@@ -231,7 +263,8 @@ def _build_spec(raw: RawForm, slugs: list[str]) -> tuple[BookSpec, list[FormErro
         pub_date=raw.pub_date.strip() or None,
         isbn=raw.isbn.strip() or None,
         lang=raw.lang.strip() or "en",
-        cover=raw.cover_path,
+        cover=raw.paths.get("cover"),
+        **{field: raw.paths.get(field) for field in CONTENT_FIELDS},
         placeholders=raw.placeholders,
         sort_names=_parse_kv_lines(raw.sort_names),
         alt_text=_parse_kv_lines(raw.alt_text),
@@ -257,8 +290,13 @@ def check_submission(raw: RawForm, session: requests.Session | None = None,
     spec, spec_errors = _build_spec(raw, slugs)
     errors = post_errors + spec_errors
 
-    if raw.cover_bytes is not None:
-        errors += _check_cover_bytes(raw.cover_bytes)
+    if "cover" in raw.files:
+        errors += _check_cover_bytes(raw.files["cover"][0])
+    for field in CONTENT_FIELDS:
+        if field in raw.files:
+            if upload_errors := _check_content_upload(field, raw.files[field][1], raw.paths.get(field)):
+                errors += upload_errors
+                setattr(spec, field, None)  # already reported; validate_spec needn't trip over it again
 
     try:
         validate_spec(spec)

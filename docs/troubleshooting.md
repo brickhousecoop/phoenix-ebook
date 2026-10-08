@@ -68,6 +68,8 @@ These slugs don't exist (all missing ones are listed at once). A slug is the las
 
 **`error: --foreword-file: file not found: …`** (or another content option, or `--cover`): the path doesn't exist. Relative paths are taken from the folder you run the command in, also when they're in a manifest.
 **`error: --foreword-file: … isn't UTF-8 text`**: re-save the file as UTF-8.
+**`error: --foreword-file: … isn't a Word file (.docx)`**: the file ends in `.docx` but isn't one. It may be an old `.doc` file renamed: open it in Word and save it as `.docx`, or save it as plain text, Markdown or HTML instead.
+**`error: The Word file … couldn't be read`**: the `.docx` file is damaged or uses something the converter can't handle. Open it in Word, save it again as `.docx`, and retry; or save it as plain text.
 
 ### Output file
 
@@ -139,6 +141,11 @@ A link's target couldn't be found (e.g. a digest's contents pointing at a sectio
 
 **`N empty links were removed; see warnings above`**
 A link with no text (invisible on the website too) was removed; nothing visible changed. If the post meant to link some words, fix it in Ghost.
+
+### `content-image-left-out`
+
+**`N content files had images that were left out; see warnings above`**
+A content page from a Word file (for example the foreword) had pictures in it. The text is in the book, but images in content files aren't carried over yet. If a picture matters, describe it in the text.
 
 ### The `[alt_text]` block
 

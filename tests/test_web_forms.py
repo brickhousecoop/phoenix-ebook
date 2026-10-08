@@ -180,7 +180,7 @@ def test_check_submission_reports_isbn_and_cover_together(monkeypatch):
         FakeResponse(200, _post_body("good"), "application/json")]}
     _fake_posts_session(monkeypatch, routes)
 
-    raw = RawForm(posts="good", title="T", isbn="not-an-isbn", cover_bytes=b"not an image")
+    raw = RawForm(posts="good", title="T", isbn="not-an-isbn", files={"cover": (b"not an image", "c.png")})
     result = check_submission(raw)
     fields = {e.field for e in result.errors}
     assert "isbn" in fields

@@ -23,6 +23,7 @@ from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD
                                      EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
+from phoenix_ebook.content import check_content_file, load_content
 from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError, PostNotFound
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
@@ -50,15 +51,6 @@ def media_type_for_ext(ext: str) -> str:
 
 def sanitize_filename(name: str) -> str:
     return re.sub(r"[^\w\-.]", "_", name).strip("_") or "item"
-
-
-def wrap_text_as_html(title: str, text: str) -> str:
-    """Content-file text as HTML: HTML passes through unchanged; plain text becomes
-    an <h2> title plus one paragraph per non-empty line."""
-    if text.strip().startswith("<"):
-        return text
-    paragraphs = "".join(f"<p>{line}</p>" for line in text.splitlines() if line.strip())
-    return f"<h2>{title}</h2>\n{paragraphs}"
 
 
 class _Page(epub.EpubHtml):
@@ -109,6 +101,18 @@ ARIA_ROLES = {
 }
 
 
+def _load_content(path: str, title: str, problems: list[BuildProblem], *, guess_text: bool = False) -> str:
+    """A content file's page HTML (see ``content.load_content``); left-out images are reported."""
+    page = load_content(path, title, guess_text=guess_text)
+    if page.images_left_out:
+        n = page.images_left_out
+        problems.append(BuildProblem(
+            kind="content-image-left-out", post_slug=None, url=None,
+            detail=f"{n} image{'' if n == 1 else 's'} in the {title} file ({Path(path).name}) left out: "
+                   "images in Word files aren't carried over yet"))
+    return page.html
+
+
 def _section(role: str, content: str) -> str:
     """Wrap content (e.g. a user's content file) in a section with a specific role, unmodified."""
     aria = f' role="{ARIA_ROLES[role]}"' if role in ARIA_ROLES else ""
@@ -138,10 +142,11 @@ PLACEHOLDER_TEXT = {
 }
 
 
-def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool) -> str | None:
+def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool,
+                         problems: list[BuildProblem]) -> str | None:
     """A section's HTML: its file, else a placeholder page, else None (section omitted)."""
     if path:
-        return Path(path).read_text(encoding="utf-8").strip()
+        return _load_content(path, title, problems)
     if use_placeholder:
         return f"<h2>{title}</h2>\n<p>{glue(placeholder_text)}</p>"
     return None
@@ -267,13 +272,8 @@ def check_content_files(spec: BookSpec) -> None:
         path = getattr(spec, field)
         if path and not Path(path).is_file():
             raise MissingContentFile(f"{option}: file not found: {path}", field=field)
-        if path and field not in ("cover",):
-            try:
-                Path(path).read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                raise InvalidBookSpec(f"{option}: {path} isn't UTF-8 text; save it as UTF-8 "
-                                      "(most editors offer this under 'Save As' or 'Encoding')",
-                                      field=field) from None
+        if path and field != "cover":
+            check_content_file(path, option, field)
 
 
 def _remove_image(img) -> None:
@@ -744,17 +744,18 @@ def build(
         (spec.imprint_file, "Imprint", "imprint.xhtml", front, "imprint"),
         (spec.foreword_file, "Foreword", "foreword.xhtml", after_toc, "foreword"),
     ]:
-        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders)
+        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders,
+                                       problems)
         if content is not None:
             bucket.append(_add_page(book, styles, page_title, file_name, _section(role, content), spec.lang,
                                     part="frontmatter"))
 
     if spec.intro_file:
-        intro_text = Path(spec.intro_file).read_text(encoding="utf-8").strip()
-        if intro_text:
+        intro_html = _load_content(spec.intro_file, "Introduction", problems, guess_text=True)
+        if intro_html:
             after_toc.append(_add_page(
                 book, styles, "Introduction", "intro.xhtml",
-                _section("introduction", wrap_text_as_html("Introduction", intro_text)),
+                _section("introduction", intro_html),
                 spec.lang, part="frontmatter",
             ))
 
@@ -857,7 +858,8 @@ def build(
         (spec.acknowledgements_file, "Acknowledgements", "acknowledgements.xhtml", "acknowledgments"),
         (spec.about_file, "About This Book", "about.xhtml", None),
     ]:
-        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders)
+        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders,
+                                       problems)
         if content is not None:
             if role:
                 content = _section(role, content)

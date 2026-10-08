@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-import os
+import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +16,7 @@ from phoenix_ebook.models import BuildProblem, Progress
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
-from web.forms import CheckResult, FormError, RawForm, check_submission
+from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, check_submission
 from web.storage import load_upload, new_folder, save_book, save_upload
 
 log = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class Outcome:
     check: CheckResult
     url: str | None = None
     problems: list[BuildProblem] = field(default_factory=list)
-    kept_cover: str = ""  # the cover, kept next to the book for a rebuild
+    kept: dict[str, str] = field(default_factory=dict)  # BookSpec field -> its upload, kept next to the book
 
     @property
     def built(self) -> bool:
@@ -56,41 +56,50 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
     """Check ``raw`` and, if it passes, build and store the book.
 
     Never raises: a failure part-way ends with its message on the form, which
-    is refilled from ``raw``. The uploaded cover lives in a temporary file for
-    the whole run and is deleted at the end, however the run ends.
+    is refilled from ``raw``. Uploads (new, or kept from the last build) live in
+    a temporary folder for the whole run, deleted at the end however it ends.
     """
     session = session or requests.Session()
-    cover_tmp = None
     try:
-        if not raw.cover_bytes and raw.kept_cover:
-            kept = load_upload(raw.kept_cover)
-            if kept is None:
-                return Outcome(CheckResult(spec=None, errors=[FormError(
-                    "cover", "the cover from the last build couldn't be found; choose it again")]))
-            raw.cover_bytes, raw.cover_filename = kept
-        if raw.cover_bytes:
-            fd, cover_tmp = tempfile.mkstemp(suffix=Path(raw.cover_filename).suffix or ".bin")
-            with os.fdopen(fd, "wb") as f:
-                f.write(raw.cover_bytes)
-            raw.cover_path = cover_tmp
+        with tempfile.TemporaryDirectory() as uploads:
+            for field_name, ref in raw.kept.items():
+                if field_name in raw.files:  # a new upload replaces the kept one
+                    continue
+                if (kept := load_upload(ref)) is None:
+                    return Outcome(CheckResult(spec=None, errors=[FormError(
+                        field_name, f"{UPLOAD_FIELDS[field_name]}: the file from the last build couldn't be found; "
+                                    "choose it again")]))
+                raw.files[field_name] = kept
+            for field_name, (data, name) in raw.files.items():
+                path = Path(uploads) / field_name / safe_name(name)
+                path.parent.mkdir()
+                path.write_bytes(data)
+                raw.paths[field_name] = str(path)
 
-        check = check_submission(raw, session, progress)
-        if not check.ok:
-            return Outcome(check)
-        return _build_and_store(check, session, progress, cover_tmp)
+            check = check_submission(raw, session, progress)
+            if not check.ok:
+                # Keep the uploads that were fine, so the refilled form can offer them again.
+                failed = {e.field for e in check.errors}
+                return Outcome(check, kept=_keep({k: v for k, v in raw.paths.items() if k not in failed},
+                                                 new_folder()))
+            return _build_and_store(check, session, progress, raw.paths)
     except PhoenixError as exc:
         return Outcome(CheckResult(spec=None, errors=[FormError(exc.field, str(exc))]))
     except Exception:
         log.exception("build failed")
         return Outcome(CheckResult(spec=None, errors=[FormError(None, BUG_MESSAGE)]))
     finally:
-        raw.cover_path = None
-        if cover_tmp:
-            os.unlink(cover_tmp)
+        raw.paths = {}
 
 
-def _build_and_store(check: CheckResult, session: requests.Session,
-                     progress: Callable[[Progress], None], cover_path: str | None) -> Outcome:
+def safe_name(name: str) -> str:
+    """An uploaded file's name, safe to use as a file name: 'My Foreword (v2).docx' -> 'My-Foreword-v2-.docx'."""
+    stem, suffix = Path(Path(name).name).stem, Path(name).suffix.lower()
+    return (re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-.")[:60] or "file") + re.sub(r"[^a-z0-9.]", "", suffix)
+
+
+def _build_and_store(check: CheckResult, session: requests.Session, progress: Callable[[Progress], None],
+                     uploads: dict[str, str]) -> Outcome:
     spec, source = check.spec, check.spec.source
     with tempfile.TemporaryDirectory() as tmp:
         spec.output = str(Path(tmp) / "book.epub")
@@ -100,8 +109,13 @@ def _build_and_store(check: CheckResult, session: requests.Session,
         folder = new_folder()
         try:
             url = save_book(result.path, spec.title, folder)
-            kept_cover = save_upload(cover_path, "cover" + Path(cover_path).suffix, folder) if cover_path else ""
+            kept = _keep(uploads, folder)
         except Exception as exc:
             log.exception("saving the book failed")
             raise PhoenixError(f"The book was built but couldn't be saved for download ({exc}). Try again.") from exc
-    return Outcome(check, url=url, problems=result.problems, kept_cover=kept_cover)
+    return Outcome(check, url=url, problems=result.problems, kept=kept)
+
+
+def _keep(paths: dict[str, str], folder: str) -> dict[str, str]:
+    """Store uploads (BookSpec field -> file) in ``folder`` for the next submission."""
+    return {name: save_upload(path, f"{name}/{Path(path).name}", folder) for name, path in paths.items()}

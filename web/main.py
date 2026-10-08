@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Iterator
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
@@ -22,7 +22,8 @@ from phoenix_ebook.models import Progress
 from phoenix_ebook.platforms.base import get_platform
 
 from web import problems, storage
-from web.forms import ALT_KINDS, MAX_POSTS, CheckResult, RawForm, alt_fixes_from, merge_alt_fixes
+from web.forms import (ALT_KINDS, CONTENT_FIELDS, MAX_POSTS, UPLOAD_FIELDS, CheckResult, RawForm, alt_fixes_from,
+                       merge_alt_fixes)
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
@@ -32,7 +33,7 @@ STREAM_TYPE = "application/x-ndjson"
 ADVANCED_FIELDS = {
     "series", "series_number", "publisher", "description", "pub_date", "lang", "isbn", "issn",
     "rights", "image_max_width", "image_quality", "keep_original_images", "placeholders",
-    "sort_names", "alt_text",
+    "sort_names", "alt_text", *CONTENT_FIELDS,
 }
 
 
@@ -48,13 +49,13 @@ def _form_page(raw: RawForm, result: CheckResult) -> str:
 
 
 def _outcome_page(raw: RawForm, outcome: Outcome) -> str:
+    raw.kept = outcome.kept
     if not outcome.built:
         return _form_page(raw, outcome.check)
     spec = outcome.check.spec
     platform = get_platform(spec.source.platform)
     fixable = [p for p in outcome.problems if p.kind in ALT_KINDS]
     fix_numbers = {id(p): n for n, p in enumerate(fixable)}
-    raw.kept_cover = outcome.kept_cover
     return templates.get_template("results.html").render(
         spec=spec,
         url=outcome.url,
@@ -120,7 +121,6 @@ async def submit(
     title: str = Form(""),
     subtitle: str = Form(""),
     editor: str = Form(""),
-    cover: UploadFile | None = File(None),
     series: str = Form(""),
     series_number: str = Form(""),
     publisher: str = Form(""),
@@ -136,20 +136,22 @@ async def submit(
     placeholders: str | None = Form(None),
     sort_names: str = Form(""),
     alt_text: str = Form(""),
-    kept_cover: str = Form(""),
 ):
-    fixes = alt_fixes_from(await request.form())
-    has_cover = cover is not None and bool(cover.filename)
+    form = await request.form()
+    files = {}
+    for name in UPLOAD_FIELDS:
+        upload = form.get(name)
+        if getattr(upload, "filename", None) and (data := await upload.read()):
+            files[name] = (data, upload.filename)
     raw = RawForm(
         posts=posts, title=title, subtitle=subtitle, editor=editor,
-        cover_bytes=(await cover.read() or None) if has_cover else None,
-        cover_filename=cover.filename if has_cover else "",
+        files=files, kept={name: form[f"kept_{name}"] for name in UPLOAD_FIELDS if form.get(f"kept_{name}")},
         series=series, series_number=series_number, publisher=publisher, description=description,
         pub_date=pub_date, lang=lang or "en", isbn=isbn, issn=issn, rights=rights,
         image_max_width=image_max_width, image_quality=image_quality,
         keep_original_images=keep_original_images is not None,
         placeholders=placeholders is not None,
-        sort_names=sort_names, alt_text=merge_alt_fixes(alt_text, fixes), kept_cover=kept_cover,
+        sort_names=sort_names, alt_text=merge_alt_fixes(alt_text, alt_fixes_from(form)),
     )
     if STREAM_TYPE in request.headers.get("accept", ""):
         return StreamingResponse(_stream(raw), media_type=STREAM_TYPE)

@@ -196,6 +196,9 @@ def _report_problems(problems) -> None:
               "(words kept); see warnings above", file=sys.stderr)
     if n := count("link-empty-removed"):
         print(f"{n} empty {plural(n, 'link was', 'links were')} removed; see warnings above", file=sys.stderr)
+    if n := count("content-image-left-out"):
+        print(f"{n} {plural(n, 'content file had images', 'content files had images')} that "
+              f"{plural(n, 'was', 'were')} left out; see warnings above", file=sys.stderr)
     if n := count("alt-override-unused"):
         print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
 

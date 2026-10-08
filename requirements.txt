@@ -3,3 +3,5 @@ beautifulsoup4>=4.13
 EbookLib>=0.20
 Pillow>=12.0
 keyring>=25.0
+markdown-it-py>=3.0  # .md content files
+mammoth>=1.8  # .docx content files

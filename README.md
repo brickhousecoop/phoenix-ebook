@@ -168,7 +168,16 @@ Links in posts are checked: a link to a section of the post that doesn't exist (
 
 Website calls-to-action are taken out of Flaming Hydra books: subscribe banners at the end of posts, and subscribe, support, share and shop buttons. Subscribe or sign-up links inside sentences keep their words but lose the (dead) link, and each such paragraph, plus any promotional image kept because it's mid-post, is listed after the build for review.
 
-Content files are HTML fragments, inserted as-is; start them with an `<h2>` heading (the title page holds the book's `<h1>`). The introduction also accepts plain text, one paragraph per line. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
+Content files can be written in four formats, chosen by the file's extension:
+
+| Extension | What happens |
+|---|---|
+| `.docx` | A Word file, converted to simple HTML: headings, italics, bold, links and lists are kept; fonts and colours are dropped. Pictures in it aren't carried over yet (the build says so). |
+| `.md` | Markdown (italics, bold, links, headings, lists). HTML typed into it is shown as text. |
+| `.txt` | Plain text, one paragraph per line. |
+| `.html` (also `.htm`, `.xhtml`) | An HTML fragment, inserted exactly as written; start it with an `<h2>` heading (the title page holds the book's `<h1>`). |
+
+A converted page that doesn't start with a heading gets one with the section's name ("Foreword"), and headings in Word and Markdown files move down a level: "# Foreword" or Word's Heading 1 becomes the page's main heading, just under the book's title. Files with any other extension are read as before: as HTML, or, for the introduction, as plain text unless they start with `<`. In a manifest, use the same names with underscores (`foreword_file`, `about_file`, …) under `[content]`.
 
 ### Images
 
@@ -231,9 +240,11 @@ uv pip install --python .venv/bin/python -r requirements-web.txt
 
 Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command line (see "Store your API key" above).
 
+**Content pages** (copyright, foreword, notes, …) are uploads under Advanced, in the formats above except `.htm`/`.xhtml`. Uploads are kept for the next submission, so after a rebuild, or a form sent back with a problem, each one is offered again ("Keep foreword.docx from last time") instead of having to be chosen again. All files sent at once must add up to under 4.4 MB (a limit of Vercel's); the page checks before sending.
+
 **Fixing alt text.** Each image with missing or unhelpful alt text gets a box on the results page, with a thumbnail. Fill them in (or tick "Decorative image") and press **Rebuild with these fixes**: the whole book is built again with your descriptions added to the Alt text field, which is also under **Change settings** for any other change. An image that is all there is of a link gets no "Decorative" option: its alt text is the link's name, so it should say where the link goes.
 
-**Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. The uploaded cover is kept next to the book, so a rebuild can use it again (a browser can't refill a file field). Either way the link contains a random part that can't be guessed, and nothing expires yet.
+**Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. Uploaded files (the cover, content pages) are kept next to the book, so a rebuild can use them again (a browser can't refill a file field). Either way the link contains a random part that can't be guessed, and nothing expires yet.
 
 **Closing the tab mid-build** doesn't stop the build when running locally: it runs to the end and saves the book, but the link is never shown, so build it again. Whether Vercel keeps it running is to be checked when deploying (#27).
 

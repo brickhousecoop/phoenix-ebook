@@ -27,6 +27,7 @@ phoenix_ebook/
 ├── embeds.py                   # third-party embeds (YouTube, X, TikTok, …) -> link cards; provider rules
 ├── dates.py                    # format_date(): dates as books show them
 ├── links.py                    # shared link repair (broken #sections, malformed addresses); marks changes
+├── content.py                  # content files (.html/.txt/.md/.docx) -> their page's HTML
 ├── styles/
 │   ├── core.css                # Standard Ebooks snapshot (CC0) — never edit; see its header
 │   └── phoenix.css             # our styles for our markup; all overrides go here
