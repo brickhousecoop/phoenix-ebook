@@ -126,6 +126,18 @@ def _add_page(book, styles, title, file_name, content, lang, part=None):
     return page
 
 
+# Section title -> its placeholder page's text, used when ``BookSpec.placeholders`` is on and the
+# section has no file. In reading order: the first three come before the posts, the rest after.
+PLACEHOLDER_TEXT = {
+    "Copyright": "[Copyright placeholder — replace with publication copyright notice.]",
+    "Imprint": "[Imprint placeholder — publisher, edition, printing history, etc.]",
+    "Foreword": "[Foreword placeholder — introductory remarks by a guest writer.]",
+    "Notes": "[Notes placeholder — endnotes, references, etc.]",
+    "Acknowledgements": "[Acknowledgements placeholder — thank-yous and credits.]",
+    "About This Book": "[About this publication placeholder — production credits, source, rights, etc.]",
+}
+
+
 def _load_or_placeholder(path, title, placeholder_text, use_placeholder: bool) -> str | None:
     """A section's HTML: its file, else a placeholder page, else None (section omitted)."""
     if path:
@@ -716,15 +728,12 @@ def build(
     # ---- Front matter ----
     title_page = _add_page(book, styles, "Title Page", "titlepage.xhtml", _title_page(spec), spec.lang,
                            part="frontmatter")
-    for file_attr, page_title, file_name, placeholder, bucket, role in [
-        (spec.copyright_file, "Copyright", "copyright.xhtml",
-         "[Copyright placeholder — replace with publication copyright notice.]", front, "copyright-page"),
-        (spec.imprint_file, "Imprint", "imprint.xhtml",
-         "[Imprint placeholder — publisher, edition, printing history, etc.]", front, "imprint"),
-        (spec.foreword_file, "Foreword", "foreword.xhtml",
-         "[Foreword placeholder — introductory remarks by a guest writer.]", after_toc, "foreword"),
+    for file_attr, page_title, file_name, bucket, role in [
+        (spec.copyright_file, "Copyright", "copyright.xhtml", front, "copyright-page"),
+        (spec.imprint_file, "Imprint", "imprint.xhtml", front, "imprint"),
+        (spec.foreword_file, "Foreword", "foreword.xhtml", after_toc, "foreword"),
     ]:
-        content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
+        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders)
         if content is not None:
             bucket.append(_add_page(book, styles, page_title, file_name, _section(role, content), spec.lang,
                                     part="frontmatter"))
@@ -830,15 +839,12 @@ def build(
         ))
 
     # ---- Back matter ----
-    for file_attr, page_title, file_name, placeholder, role in [
-        (spec.notes_file, "Notes", "notes.xhtml",
-         "[Notes placeholder — endnotes, references, etc.]", None),
-        (spec.acknowledgements_file, "Acknowledgements", "acknowledgements.xhtml",
-         "[Acknowledgements placeholder — thank-yous and credits.]", "acknowledgments"),
-        (spec.about_file, "About This Book", "about.xhtml",
-         "[About this publication placeholder — production credits, source, rights, etc.]", None),
+    for file_attr, page_title, file_name, role in [
+        (spec.notes_file, "Notes", "notes.xhtml", None),
+        (spec.acknowledgements_file, "Acknowledgements", "acknowledgements.xhtml", "acknowledgments"),
+        (spec.about_file, "About This Book", "about.xhtml", None),
     ]:
-        content = _load_or_placeholder(file_attr, page_title, placeholder, spec.placeholders)
+        content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders)
         if content is not None:
             if role:
                 content = _section(role, content)

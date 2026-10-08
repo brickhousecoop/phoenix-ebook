@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import io
 import json
+import re
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
 from conftest import FakeResponse, FakeSession, jpeg, png
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
+from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.secrets import env_var_name
 from web import forms
 from web.main import app
@@ -49,6 +52,35 @@ def test_get_form_advanced_section_closed_by_default(client):
     assert "<details open>" not in r.text
 
 
+def test_every_field_has_a_hint_read_with_it(client):
+    html = client.get("/").text
+    names = re.findall(r'<(?:input|textarea)[^>]*\bname="([^"]+)"', html)
+    assert len(names) == 20
+    for name in names:
+        assert f'id="{name}-hint"' in html, name
+        assert re.search(rf'id="{name}"[^>]*aria-describedby="{name}-hint', html, re.S), name
+
+
+def test_get_form_prefills_today_and_defaults(client):
+    html = client.get("/").text
+    assert f'name="pub_date" value="{date.today().isoformat()}"' in html
+    assert 'name="lang" value="en"' in html
+    assert 'name="image_max_width" value="1100"' in html
+    assert 'name="image_quality" value="85"' in html
+
+
+def test_placeholder_pages_on_by_default_like_the_cli(client):
+    html = client.get("/").text
+    assert "checked" in re.search(r'name="placeholders"[^>]*>', html).group(0)
+
+
+def test_placeholder_preview_shows_the_books_own_text(client):
+    html = client.get("/").text
+    for title, text in PLACEHOLDER_TEXT.items():
+        assert f'<span class="page-title">{title}</span>' in html
+        assert text in html
+
+
 # ---------------------------------------------------------------- POST errors + accessibility
 
 def test_post_with_errors_shows_summary_tied_to_fields(client):
@@ -59,7 +91,7 @@ def test_post_with_errors_shows_summary_tied_to_fields(client):
     assert 'tabindex="-1"' in r.text
     assert "autofocus" in r.text
     assert "add at least one post address" in r.text
-    assert 'aria-describedby="posts-errors"' in r.text
+    assert 'aria-describedby="posts-hint posts-errors"' in r.text
     assert 'aria-invalid="true"' in r.text
 
 

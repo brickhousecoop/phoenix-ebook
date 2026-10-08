@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -13,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
+from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 
 from web.forms import MAX_POSTS, CheckResult, RawForm, check_submission
 
@@ -34,12 +36,15 @@ def _render(request: Request, *, raw: RawForm, result: CheckResult, submitted: b
         "submitted": submitted,
         "advanced_open": advanced_open,
         "max_posts": MAX_POSTS,
+        "placeholder_pages": PLACEHOLDER_TEXT,
     })
 
 
 @app.get("/", response_class=HTMLResponse)
 async def form(request: Request) -> HTMLResponse:
-    return _render(request, raw=RawForm(), result=CheckResult(spec=None), submitted=False)
+    # The server's date, which on Vercel is UTC; see #29.
+    raw = RawForm(pub_date=date.today().isoformat())
+    return _render(request, raw=raw, result=CheckResult(spec=None), submitted=False)
 
 
 @app.post("/", response_class=HTMLResponse)

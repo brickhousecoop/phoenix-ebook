@@ -37,10 +37,10 @@
     padding: 1rem;
   }
   legend { font-weight: 600; padding: 0 0.25rem; }
-  label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
-  label:first-of-type { margin-top: 0; }
-  .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.25rem; }
-  input[type="text"], input[type="number"], input[type="file"], input[type="date"], textarea {
+  label { display: block; font-weight: 600; margin: 1rem 0 0.25rem; }
+  fieldset > label:first-of-type { margin-top: 0; }
+  .hint { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.35rem; }
+  input[type="text"], input[type="number"], input[type="file"], textarea {
     width: 100%;
     padding: 0.5rem;
     border: 1px solid var(--border);
@@ -50,9 +50,34 @@
     background: var(--bg);
   }
   textarea { resize: vertical; }
-  .checkbox { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; margin: 0.75rem 0; }
-  .checkbox input { width: 1.25rem; height: 1.25rem; }
+  .checkbox { display: grid; grid-template-columns: 1.25rem 1fr; column-gap: 0.5rem; margin: 1rem 0; }
+  .checkbox input { width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; }
+  .checkbox label { margin: 0; }
+  .checkbox .hint { grid-column: 2; margin: 0.1rem 0 0; }
   details { margin: 0 0 1.25rem; }
+  details.preview { margin: -0.5rem 0 1rem 1.75rem; }
+  details.preview > summary { font-weight: normal; color: var(--accent); text-decoration: underline; }
+  .pages {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+    gap: 0.75rem;
+  }
+  .page {
+    aspect-ratio: 2 / 3;
+    border: 1px solid var(--border);
+    border-radius: 0.2rem;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+    padding: 0.75rem 0.6rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .page-title { font-weight: 700; font-size: 0.95rem; text-align: center; }
   details > summary {
     cursor: pointer;
     font-weight: 600;
@@ -100,6 +125,37 @@
 </style>
 </head>
 <body>
+{#- One labelled input with its hint and its errors, both announced with the field. -#}
+{% macro field(name, label, hint=none, type="text", rows=none, attrs="") -%}
+  {%- set errors = result.errors_for(name) -%}
+  <label for="{{ name }}">{{ label }}</label>
+  {% if hint %}<p class="hint" id="{{ name }}-hint">{{ hint | safe }}</p>{% endif %}
+  {% if rows %}
+  <textarea id="{{ name }}" name="{{ name }}" rows="{{ rows }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>{{ raw[name] }}</textarea>
+  {% elif type == "file" %}
+  <input type="file" id="{{ name }}" name="{{ name }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>
+  {% else %}
+  <input type="{{ type }}" id="{{ name }}" name="{{ name }}" value="{{ raw[name] }}"
+    aria-describedby="{% if hint %}{{ name }}-hint {% endif %}{{ name }}-errors"
+    {% if errors %}aria-invalid="true"{% endif %} {{ attrs | safe }}>
+  {% endif %}
+  <div id="{{ name }}-errors">
+    {% for msg in errors %}<p class="field-error">{{ msg }}</p>{% endfor %}
+  </div>
+{%- endmacro %}
+
+{% macro checkbox(name, label, hint) -%}
+  <div class="checkbox">
+    <input type="checkbox" id="{{ name }}" name="{{ name }}" aria-describedby="{{ name }}-hint"
+      {% if raw[name] %}checked{% endif %}>
+    <label for="{{ name }}">{{ label }}</label>
+    <p class="hint" id="{{ name }}-hint">{{ hint }}</p>
+  </div>
+{%- endmacro %}
 <main>
   <h1>Build a Flaming Hydra book</h1>
   <p class="hint">Turns a list of Flaming Hydra posts into an EPUB. Any post the configured
@@ -126,39 +182,31 @@
   </div>
   {% endif %}
 
+  <p>Only the post addresses are required; everything else is optional.</p>
+
   <form method="post" enctype="multipart/form-data" novalidate>
     <fieldset>
       <legend>Posts</legend>
 
-      <label for="posts">Post addresses, one per line, in reading order</label>
-      <p class="hint">A full address (<code>flaminghydra.com/…</code> or
-        <code>flaminghydra.ghost.io/…</code>) or just the slug. Up to {{ max_posts }} posts.</p>
-      <textarea id="posts" name="posts" rows="8" aria-describedby="posts-errors"
-        {% if result.errors_for('posts') %}aria-invalid="true"{% endif %}>{{ raw.posts }}</textarea>
-      <div id="posts-errors">
-        {% for msg in result.errors_for('posts') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-      </div>
+      {{ field("posts", "Post addresses (required)",
+          "One per line, in reading order: a full address (<code>flaminghydra.com/…</code> or "
+          ~ "<code>flaminghydra.ghost.io/…</code>) or just the slug. Up to " ~ max_posts ~ " posts.",
+          rows=8) }}
 
-      <label for="title">Title</label>
-      <input type="text" id="title" name="title" value="{{ raw.title }}" aria-describedby="title-errors"
-        {% if result.errors_for('title') %}aria-invalid="true"{% endif %}>
-      <div id="title-errors">
-        {% for msg in result.errors_for('title') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-      </div>
+      {{ field("title", "Title",
+          "Shown on the title page and in reading apps’ libraries (e.g., Flaming Hydra September 2026). "
+          ~ "Leave blank for “Collected Posts”.") }}
 
-      <label for="subtitle">Subtitle</label>
-      <input type="text" id="subtitle" name="subtitle" value="{{ raw.subtitle }}">
+      {{ field("subtitle", "Subtitle",
+          "Shown under the title on the title page (e.g., Our ten best posts to end summer!).") }}
 
-      <label for="editor">Editor</label>
-      <p class="hint">Who compiled the book; credited as its creator. Post authors become contributors.</p>
-      <input type="text" id="editor" name="editor" value="{{ raw.editor }}">
+      {{ field("editor", "Editor",
+          "Who compiled the book; credited as its creator (e.g., The Phoenix Editorial Colony). "
+          ~ "Post authors become contributors.") }}
 
-      <label for="cover">Cover image (optional)</label>
-      <input type="file" id="cover" name="cover" accept="image/*" aria-describedby="cover-errors"
-        {% if result.errors_for('cover') %}aria-invalid="true"{% endif %}>
-      <div id="cover-errors">
-        {% for msg in result.errors_for('cover') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-      </div>
+      {{ field("cover", "Cover image",
+          "JPEG, PNG, GIF or WebP, under 4.5 MB. Without one, reading apps show their own.",
+          type="file", attrs='accept="image/*"') }}
     </fieldset>
 
     <details {% if advanced_open %}open{% endif %}>
@@ -166,97 +214,80 @@
       <fieldset>
         <legend>Credits and metadata</legend>
 
-        <label for="series">Series</label>
-        <input type="text" id="series" name="series" value="{{ raw.series }}" aria-describedby="series-errors"
-          {% if result.errors_for('series') %}aria-invalid="true"{% endif %}>
-        <div id="series-errors">
-          {% for msg in result.errors_for('series') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("series", "Series",
+            "Reading apps group books in a series together (e.g., Flaming Hydra Digest).") }}
 
-        <label for="series_number">Series number</label>
-        <input type="text" id="series_number" name="series_number" value="{{ raw.series_number }}"
-          aria-describedby="series_number-errors"
-          {% if result.errors_for('series_number') %}aria-invalid="true"{% endif %}>
-        <div id="series_number-errors">
-          {% for msg in result.errors_for('series_number') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("series_number", "Series number",
+            "This book’s number in the series (e.g., 12). Needs a series.") }}
 
-        <label for="publisher">Publisher</label>
-        <input type="text" id="publisher" name="publisher" value="{{ raw.publisher }}">
+        {{ field("publisher", "Publisher", "Shown in reading apps’ book details (e.g., The Phoenix Combustion Engine).") }}
 
-        <label for="description">Description</label>
-        <textarea id="description" name="description" rows="3">{{ raw.description }}</textarea>
+        {{ field("description", "Description",
+            "A short blurb, shown in reading apps’ book details.", rows=3) }}
 
-        <label for="pub_date">Publication date</label>
-        <p class="hint">e.g. 2026-09-29</p>
-        <input type="text" id="pub_date" name="pub_date" value="{{ raw.pub_date }}">
+        {{ field("pub_date", "Publication date",
+            "YYYY-MM-DD; today’s date is filled in. Clear it for no date.") }}
 
-        <label for="lang">Language code</label>
-        <input type="text" id="lang" name="lang" value="{{ raw.lang }}">
+        {{ field("lang", "Language",
+            "The book’s language, as a code (e.g., <code>en</code>, <code>fr</code> or <code>es-MX</code>).") }}
 
-        <label for="isbn">ISBN</label>
-        <input type="text" id="isbn" name="isbn" value="{{ raw.isbn }}" aria-describedby="isbn-errors"
-          {% if result.errors_for('isbn') %}aria-invalid="true"{% endif %}>
-        <div id="isbn-errors">
-          {% for msg in result.errors_for('isbn') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("isbn", "ISBN",
+            "Only if you have one for this book. Leave blank and the book gets a random ID.") }}
 
-        <label for="issn">ISSN</label>
-        <p class="hint">Identifies the series (all issues), not this book. Requires a series name.</p>
-        <input type="text" id="issn" name="issn" value="{{ raw.issn }}" aria-describedby="issn-errors"
-          {% if result.errors_for('issn') %}aria-invalid="true"{% endif %}>
-        <div id="issn-errors">
-          {% for msg in result.errors_for('issn') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("issn", "ISSN",
+            "Identifies the series (all its issues), not this book. Needs a series.") }}
 
-        <label for="rights">Rights statement</label>
-        <input type="text" id="rights" name="rights" value="{{ raw.rights }}">
+        {{ field("rights", "Rights statement",
+            "Shown in reading apps’ book details (e.g., © 2026 Flaming Hydra. All rights reserved.) "
+            ~ "Leave blank for none.") }}
       </fieldset>
 
       <fieldset>
         <legend>Images</legend>
 
-        <label for="image_max_width">Max image width (px)</label>
-        <p class="hint">0 = no resizing.</p>
-        <input type="number" id="image_max_width" name="image_max_width" value="{{ raw.image_max_width }}"
-          aria-describedby="image_max_width-errors"
-          {% if result.errors_for('image_max_width') %}aria-invalid="true"{% endif %}>
-        <div id="image_max_width-errors">
-          {% for msg in result.errors_for('image_max_width') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("image_max_width", "Maximum image width (pixels)",
+            "Wider images are scaled down. 0 keeps every image at its original size.",
+            type="number", attrs='min="0" inputmode="numeric"') }}
 
-        <label for="image_quality">JPEG quality (1-95)</label>
-        <input type="number" id="image_quality" name="image_quality" value="{{ raw.image_quality }}"
-          aria-describedby="image_quality-errors"
-          {% if result.errors_for('image_quality') %}aria-invalid="true"{% endif %}>
-        <div id="image_quality-errors">
-          {% for msg in result.errors_for('image_quality') %}<p class="field-error">{{ msg }}</p>{% endfor %}
-        </div>
+        {{ field("image_quality", "JPEG quality (1–95)",
+            "Lower makes a smaller book with softer photos.",
+            type="number", attrs='min="1" max="95" inputmode="numeric"') }}
 
-        <div class="checkbox">
-          <input type="checkbox" id="keep_original_images" name="keep_original_images"
-            {% if raw.keep_original_images %}checked{% endif %}>
-          <label for="keep_original_images" style="margin:0">Embed images exactly as downloaded (no resizing)</label>
-        </div>
+        {{ checkbox("keep_original_images", "Keep images exactly as downloaded",
+            "No resizing or re-encoding: a bigger book. Use it if images look wrong after resizing.") }}
       </fieldset>
 
       <fieldset>
         <legend>Book structure</legend>
 
-        <div class="checkbox">
-          <input type="checkbox" id="placeholders" name="placeholders"
-            {% if raw.placeholders %}checked{% endif %}>
-          <label for="placeholders" style="margin:0">Add placeholder pages for front/back-matter sections
-            with no file</label>
-        </div>
+        {{ checkbox("placeholders", "Add placeholder pages",
+            "Adds six draft pages to the book, to replace with your own text later.") }}
 
-        <label for="sort_names">Sort-name overrides</label>
-        <p class="hint">One per line: <code>Name = Last, First</code></p>
-        <textarea id="sort_names" name="sort_names" rows="3">{{ raw.sort_names }}</textarea>
+        <details class="preview">
+          <summary>What placeholder pages look like</summary>
+          <p class="hint">Before the posts:</p>
+          <ul class="pages">
+            {% for title, text in placeholder_pages.items() %}
+            {% if title == "Notes" %}
+          </ul>
+          <p class="hint">After the posts:</p>
+          <ul class="pages">
+            {% endif %}
+            <li class="page">
+              <span class="page-title">{{ title }}</span>
+              <span>{{ text }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </details>
 
-        <label for="alt_text">Alt-text overrides</label>
-        <p class="hint">One per line: <code>image URL = alt text</code> (empty text = decorative)</p>
-        <textarea id="alt_text" name="alt_text" rows="3">{{ raw.alt_text }}</textarea>
+        {{ field("sort_names", "Sort names",
+            "Fixes how authors sort in library apps when the automatic guess is wrong. One per line: "
+            ~ "<code>Ursula K. Le Guin = Le Guin, Ursula K.</code>", rows=3) }}
+
+        {{ field("alt_text", "Alt text",
+            "Descriptions for images that have none. One per line: <code>image address = description</code>; "
+            ~ "leave the description empty for a purely decorative image.", rows=3) }}
       </fieldset>
     </details>
 
