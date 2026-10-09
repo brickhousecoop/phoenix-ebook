@@ -8,6 +8,10 @@ FEATURE_IMAGE = "data-feature-image"
 CALL_TO_ACTION = "data-call-to-action"
 # A promotional image kept because it isn't at the end of the post (it may be content); reported.
 CALL_TO_ACTION_BANNER = "data-call-to-action-banner"
+# An empty marker left where a closing appeal was removed (#30): the removed words, and its link in
+# CALL_TO_ACTION_REMOVED_URL. The builder reports it and removes the marker.
+CALL_TO_ACTION_REMOVED = "data-call-to-action-removed"
+CALL_TO_ACTION_REMOVED_URL = "data-call-to-action-removed-url"
 
 
 def mark_call_to_action(soup, link) -> None:

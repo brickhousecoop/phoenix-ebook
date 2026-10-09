@@ -19,7 +19,8 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
-from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
+from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
+                                     CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
                                      EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
@@ -467,6 +468,11 @@ def _report_calls_to_action(soup, post: Post, problems: list[BuildProblem]) -> N
                                      detail="promotional image kept (not at the end of the post)"
                                             + (f": \"{text[:200]}\"" if text else "")))
         del figure[CALL_TO_ACTION_BANNER]
+    for marker in soup.find_all(attrs={CALL_TO_ACTION_REMOVED: True}):
+        problems.append(BuildProblem(kind="call-to-action", post_slug=post.slug,
+                                     url=marker.get(CALL_TO_ACTION_REMOVED_URL),
+                                     detail=f"closing appeal removed: \"{marker[CALL_TO_ACTION_REMOVED][:200]}\""))
+        marker.decompose()
 
 
 def _report_link_changes(soup, post: Post, problems: list[BuildProblem]) -> None:

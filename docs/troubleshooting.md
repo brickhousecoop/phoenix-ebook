@@ -114,8 +114,8 @@ On the command line, the entry is in your manifest's `[alt_text]` table, and the
 
 ### `call-to-action`
 
-**`N website calls-to-action (subscribe/support) were unlinked or kept; review the warnings above`**
-Website calls-to-action were taken out of the book (Flaming Hydra books). Listed are paragraphs whose subscribe or sign-up link was removed (the words stay, e.g. "why not subscribe?"), and promotional images kept because they're in the middle of a post. If a sentence now reads oddly, edit the post or leave the post out.
+**`N website calls-to-action (subscribe/support) were removed, unlinked or kept; review the warnings above`**
+Website calls-to-action were taken out of the book (Flaming Hydra books). Listed are closing appeals that were removed (the last section of a post, after its final rule, asking readers to subscribe or donate, e.g. "If you enjoyed this free post, subscribe…"), paragraphs whose subscribe, sign-up or donate link was removed (the words stay, e.g. "why not subscribe?"), and promotional images kept because they're in the middle of a post. Check that each removed closing appeal really was one; if a sentence now reads oddly, edit the post or leave the post out.
 
 ### `embed-removed`
 

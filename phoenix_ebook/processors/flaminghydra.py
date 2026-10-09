@@ -5,7 +5,8 @@ import re
 
 from bs4 import BeautifulSoup, NavigableString
 
-from phoenix_ebook.canonical import CALL_TO_ACTION, CALL_TO_ACTION_BANNER, FEATURE_IMAGE, mark_call_to_action
+from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
+                                     CALL_TO_ACTION_REMOVED_URL, FEATURE_IMAGE, mark_call_to_action)
 
 from phoenix_ebook.models import Post
 from phoenix_ebook.processors.base import HtmlProcessor, register_processor
@@ -48,7 +49,8 @@ class FlamingHydraProcessor(HtmlProcessor):
 
 
 # Website calls-to-action (#20). A book can't subscribe, share or shop.
-_SUBSCRIBE = re.compile(r"^(?:https?://(?:www\.)?flaminghydra\.(?:com|ghost\.io))?/(?:subscribe|signup|membership)\b", re.I)
+_SUBSCRIBE = re.compile(r"^(?:https?://(?:www\.)?flaminghydra\.(?:com|ghost\.io))?/(?:subscribe|signup|membership|donate)\b",
+                        re.I)
 _SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
                     r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
 _SHOP = re.compile(r"^https?://shop\.flaminghydra\.com\b", re.I)
@@ -76,10 +78,34 @@ def _remove_calls_to_action(soup) -> None:
     if trailing:
         _drop_dangling_end(soup)
 
+    _remove_closing_appeal(soup)
+
     # Subscribe links inside text: keep the words, mark them for the report.
     for link in soup.find_all("a", href=True):
         if _SUBSCRIBE.match(link["href"]) and link.find("img") is None:
             mark_call_to_action(soup, link)
+
+
+CLOSING_APPEAL_MAX_WORDS = 150  # longer final sections are left alone: more likely writing than an appeal
+
+
+def _remove_closing_appeal(soup) -> None:
+    """Drop a post's final section, after its last <hr>, when it asks readers to subscribe or
+    donate (#30): "If you enjoyed this free post, subscribe…". A marker is left for the report."""
+    blocks = _blocks(soup)
+    rules = [i for i, block in enumerate(blocks) if getattr(block, "name", None) == "hr"]
+    if not rules:
+        return
+    section = blocks[rules[-1] + 1:]
+    links = [a["href"] for block in section if hasattr(block, "find_all")
+             for a in block.find_all("a", href=True) if _SUBSCRIBE.match(a["href"])]
+    text = " ".join(" ".join(block.get_text(" ", strip=True).split()) for block in section).strip()
+    if not links or len(text.split()) > CLOSING_APPEAL_MAX_WORDS:
+        return
+    for block in [blocks[rules[-1]], *section]:
+        block.extract()
+    _drop_dangling_end(soup)
+    soup.append(soup.new_tag("span", attrs={CALL_TO_ACTION_REMOVED: text, CALL_TO_ACTION_REMOVED_URL: links[0]}))
 
 
 def _is_subscribe_banner(figure) -> bool:

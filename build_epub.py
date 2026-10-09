@@ -181,7 +181,7 @@ def _report_problems(problems) -> None:
         print(f"{n} {plural(n, 'image has', 'images have')} alt text that looks unhelpful", file=sys.stderr)
     if n := count("call-to-action"):
         print(f"{n} website call{'' if n == 1 else 's'}-to-action (subscribe/support) "
-              f"{'was' if n == 1 else 'were'} unlinked or kept; review the warnings above", file=sys.stderr)
+              f"{'was' if n == 1 else 'were'} removed, unlinked or kept; review the warnings above", file=sys.stderr)
     if n := count("embed-removed"):
         print(f"{n} embedded {plural(n, 'form or poll was', 'forms or polls were')} left out; "
               "see warnings above", file=sys.stderr)

@@ -154,7 +154,7 @@ def test_removed_banner_is_never_downloaded_and_hazard_is_none(build_book):
 def test_cli_summary_line(capsys):
     from phoenix_ebook.models import BuildProblem
     build_epub._report_problems([BuildProblem("call-to-action", "p", SUB, 'link removed, words kept: "x"')])
-    assert "1 website call-to-action (subscribe/support) was unlinked or kept" in capsys.readouterr().err
+    assert "1 website call-to-action (subscribe/support) was removed, unlinked or kept" in capsys.readouterr().err
 
 
 def test_portal_link_around_an_image_is_described(build_book):
@@ -164,3 +164,63 @@ def test_portal_link_around_an_image_is_described(build_book):
                       processor="flaminghydra")
     [cta] = [p for p in book.result.problems if p.kind == "call-to-action"]
     assert cta.detail == 'link removed from an image (image kept): "Free posts! Click here!"'
+
+
+# ---------------------------------------------------------------- closing appeals in text (#30)
+
+# The real endings of three posts (football-in-palestine, gazans-living-in-egypt,
+# antisemitism-and-the-unspeakable), after a last paragraph of the essay.
+LAST = "<p>The essay's last real paragraph.</p>"
+CLOSING_APPEALS = [
+    '<hr><p><em>If  you enjoyed this free post, </em><a href="https://flaminghydra.com/subscribe" rel="noreferrer">'
+    '<strong><em>subscribe</em></strong></a><em> or<strong> </strong></em><a href="https://flaminghydra.com/donate/" '
+    'rel="noreferrer"><strong><em>donate</em></strong></a><em> to Flaming Hydra and receive incandescent essays, '
+    'comics, criticism and more from us each weekday.</em></p>',
+    '<hr><p>If you loved this story, send it to a friend, recommend it on socials... and '
+    '<a href="https://flaminghydra.com/subscribe" rel="noreferrer"><strong><em>Subscribe to Flaming Hydra</em></strong>'
+    '</a><strong><em>.</em></strong></p>',
+    '<hr><p><strong><em>If you enjoyed this free post, help support the journalist-owned press. </em></strong>'
+    '<a href="https://flaminghydra.com/subscribe" rel="noreferrer"><strong><em>Subscribe</em></strong></a>'
+    '<strong><em> to Flaming Hydra.</em></strong></p>',
+]
+
+
+@pytest.mark.parametrize("ending", CLOSING_APPEALS)
+def test_closing_appeal_after_the_last_rule_is_removed(ending):
+    out = processed(LAST + ending + "<p></p>")
+    soup = BeautifulSoup(out, "html.parser")
+    assert [t.name for t in soup.find_all(True) if t.name != "span"] == ["p"]
+    assert soup.get_text() == "The essay's last real paragraph."
+    assert soup.find("span", attrs={"data-call-to-action-removed": True})
+
+
+def test_final_section_without_an_appeal_is_kept():
+    html = LAST + '<hr/><p>A coda, with <a href="https://example.org/">a link</a>.</p>'
+    assert processed(html) == html
+
+
+def test_long_final_section_is_kept_even_with_a_subscribe_link():
+    coda = " ".join(["word"] * 160)
+    out = processed(LAST + f'<hr><p>{coda} <a href="https://flaminghydra.com/subscribe">subscribe</a></p>')
+    assert coda in out and "<hr" in out  # left alone; the link alone is unwrapped and reported
+
+
+def test_only_the_last_section_counts():
+    html = (LAST + '<hr><p>Middle, <a href="https://flaminghydra.com/subscribe">subscribe</a> here.</p>'
+            '<hr><p>The real ending.</p>')
+    text = BeautifulSoup(processed(html), "html.parser").get_text()
+    assert "The real ending." in text and "Middle, subscribe here." in text
+
+
+def test_donate_links_mid_post_are_unlinked_like_subscribe_links():
+    out = processed('<p>Please <a href="https://flaminghydra.com/donate/">donate</a> today.</p><p>More.</p>')
+    assert "<a " not in out and "Please donate today." in BeautifulSoup(out, "html.parser").get_text()
+
+
+def test_removed_closing_appeal_is_reported(build_book):
+    book = build_book(post(GhostPlatform().normalize_html(LAST + CLOSING_APPEALS[0])), processor="flaminghydra")
+    (cta,) = [p for p in book.result.problems if p.kind == "call-to-action"]
+    assert cta.detail.startswith('closing appeal removed: "If you enjoyed this free post, subscribe or donate')
+    assert cta.url == "https://flaminghydra.com/subscribe"
+    chapter = book.chapter()
+    assert "If you enjoyed" not in chapter and "data-call-to-action" not in chapter and "<hr" not in chapter
