@@ -246,7 +246,9 @@ Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command li
 
 **Where books go.** With `BLOB_READ_WRITE_TOKEN` set (Vercel sets it when a Blob store is connected), each book is uploaded to that public Blob store. Otherwise it's saved under `$PHOENIX_BOOKS_DIR` (default: a `phoenix-books` folder in the system's temporary directory) and served by the site itself. Uploaded files (the cover, content pages) are kept next to the book, so a rebuild can use them again (a browser can't refill a file field). Either way the link contains a random part that can't be guessed, and nothing expires yet.
 
-**Closing the tab mid-build** doesn't stop the build when running locally: it runs to the end and saves the book, but the link is never shown, so build it again. Whether Vercel keeps it running is to be checked when deploying (#27).
+**Closing the tab mid-build** doesn't stop the build, locally or on Vercel: it runs to the end and saves the book, but the link is never shown, so build it again.
+
+**On Vercel** the site runs at <https://phoenix-ebook.vercel.app>, behind Vercel's sign-in; [docs/website-setup.md](docs/website-setup.md) explains how it's set up, who can change what, and how to read its logs.
 
 ## Extending phoenix-ebook
 
