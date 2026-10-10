@@ -33,19 +33,38 @@ class FlamingHydraProcessor(HtmlProcessor):
 
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
         super().clean(soup, post)
-        # Posts end with an <hr> and a line inviting readers to the site's comments
-        # ("You may Shred in the Comments Section", linking to #comments). It means
-        # nothing in a book, so drop the first such <hr> + paragraph pair.
-        for hr in soup.find_all("hr"):
-            next_sib = hr.find_next_sibling()
-            if next_sib and next_sib.name == "p":
-                link = next_sib.find("a", href=lambda h: h and "#comments" in h)
-                if link:
-                    next_sib.decompose()
-                    hr.decompose()
-                    break
+        _remove_comments_invitations(soup)
         _remove_calls_to_action(soup)
         _convert_bylines(soup, post)
+
+
+COMMENTS_INVITATION_MAX_WORDS = 30  # after a rule, a longer paragraph mentioning the comments is writing
+
+
+def _is_comments_link(href) -> bool:
+    return bool(href) and "#comments" in href
+
+
+def _remove_comments_invitations(soup) -> None:
+    """Drop the lines inviting readers to the site's comments ("You may Shred in the Comments
+    Section", linking to #comments). They mean nothing in a book. Most posts end with one after an
+    <hr>; some have no rule, or put it above the share buttons. A paragraph is dropped when its
+    words are all comments links, or when it follows an <hr> (dropped too), is short and has one."""
+    removed = False
+    for p in soup.find_all("p"):
+        if p.find("a", href=_is_comments_link) is None:
+            continue
+        rest = "".join(s for s in p.strings if s.find_parent("a", href=_is_comments_link) is None)
+        previous = _previous_block(p)
+        after_rule = (getattr(previous, "name", None) == "hr"
+                      and len(p.get_text(" ").split()) <= COMMENTS_INVITATION_MAX_WORDS)
+        if after_rule or not re.search(r"\w", rest):
+            if after_rule:
+                previous.decompose()
+            p.decompose()
+            removed = True
+    if removed:
+        _drop_dangling_end(soup)
 
 
 # Website calls-to-action (#20). A book can't subscribe, share or shop.

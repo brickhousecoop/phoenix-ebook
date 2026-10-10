@@ -224,3 +224,39 @@ def test_removed_closing_appeal_is_reported(build_book):
     assert cta.url == "https://flaminghydra.com/subscribe"
     chapter = book.chapter()
     assert "If you enjoyed" not in chapter and "data-call-to-action" not in chapter and "<hr" not in chapter
+
+
+# ---------------------------------------------------------------- invitations to the comments
+
+COMMENTS = "https://flaminghydra.com/issue-TKTK#comments"
+INVITATIONS = [
+    # after a rule (most posts)
+    '<hr><p><a href="' + COMMENTS + '" rel="noreferrer">You may Shred in the Comments Section</a></p>',
+    # no rule ("The Insult That Made a Man Make Another Man")
+    '<p><a href="' + COMMENTS + '" rel="noreferrer">Make something of yourself in the Comments Section</a></p>',
+    # split across links, with stray bold space ("Lost Cat", "Remembering Linda Yaccarino's Career")
+    '<p><a href="' + COMMENTS + '"><strong>Approach this piece </strong></a><a href="' + COMMENTS + '">'
+    '<strong>in the Comments Section </strong></a><strong> </strong></p>',
+    # after a rule, partly outside the link ("Podcast: How to Fix AI")
+    '<hr><p>Get out of the doom loop and <a href="' + COMMENTS + '">discuss in the comments</a> !</p>',
+]
+
+
+@pytest.mark.parametrize("invitation", INVITATIONS)
+def test_invitation_to_the_comments_is_removed(invitation):
+    assert processed(LAST + invitation + "<p></p>") == LAST
+
+
+def test_invitation_above_the_share_buttons_is_removed_and_what_follows_kept():
+    out = processed(LAST + INVITATIONS[1] + '<figure><img src="https://example.org/a.png" alt="A still."></figure>')
+    assert "Comments Section" not in out and 'alt="A still."' in out
+
+
+def test_sentence_mentioning_the_comments_is_kept():
+    html = '<p>As a reader put it in <a href="' + COMMENTS + '">the comments</a>, the ending was earned.</p>' + LAST
+    assert processed(html) == html
+
+
+def test_long_paragraph_after_a_rule_mentioning_the_comments_is_kept():
+    html = LAST + "<hr/><p>" + " ".join(["word"] * 40) + ' <a href="' + COMMENTS + '">comments</a></p>'
+    assert processed(html) == html
