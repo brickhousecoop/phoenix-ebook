@@ -50,6 +50,46 @@ def test_empty_links_removed_and_marked():
     assert soup.find("a", href="https://example.org/y") is not None  # image links are not empty
 
 
+CBC = "https://www.cbc.ca/news/canada/edmonton/canadian-army-readies-for-future-of-combat-9.7339337"
+BBC = "https://www.bbc.com/news/articles/c9dr74g32g8go"
+
+
+def test_links_split_per_word_are_joined():
+    # Real markup from issue-655: one link per word and per space, with and without bold.
+    words = ["have", " ", "also", " ", "been"]
+    bold = "".join(f'<a href="{CBC}"><strong>{w}</strong></a>' for w in words)
+    plain = "".join(f'<a href="{BBC}">{w}</a>' for w in ["with", " ", "Greenland"])
+    soup = cleaned(f"<p><strong>The Canadian Forces </strong>{bold} and {plain} too.</p>", "flaminghydra")
+    [cbc] = soup.find_all("a", href=CBC)
+    assert cbc.get_text() == "have also been"
+    [bbc] = soup.find_all("a", href=BBC)
+    assert bbc.get_text() == "with Greenland"
+    assert soup.find(attrs={"data-link-removed": True}) is None
+    assert "have also been and with Greenland too." in soup.get_text()
+
+
+def test_neighbouring_links_to_different_addresses_stay_apart():
+    soup = cleaned('<p><a href="https://example.org/a">one</a><a href="https://example.org/b">two</a> '
+                   '<a href="https://example.org/a">three</a></p>')
+    assert [a.get_text() for a in soup.find_all("a")] == ["one", "two", "three"]
+
+
+@pytest.mark.parametrize("space", [" ", "<em> </em>", "<em><u> </u></em>"])
+def test_removed_empty_link_keeps_its_space(space):
+    # Real markup (yakkin-about-the-bad-writers): links whose words fell outside them, leaving only a space.
+    soup = cleaned(f'<p><em>conducted</em><a href="https://example.org/x">{space}</a><em>covert</em></p>')
+    assert soup.find("a") is None
+    assert soup.find("span", attrs={"data-link-removed": "https://example.org/x"}) is not None
+    assert soup.get_text() == "conducted covert"
+
+
+def test_split_links_are_not_reported(build_book):
+    html = "".join(f'<a href="{BBC}">{w}</a>' for w in ["with", " ", "Greenland"])
+    book = build_book(post(GhostPlatform().normalize_html(f"<p>Deal {html}.</p>")))
+    assert not [p for p in book.result.problems if p.kind.startswith("link-")]
+    assert f'<a href="{BBC}">with Greenland</a>' in book.chapter()
+
+
 def test_ordinary_links_and_targets_untouched():
     html = ('<h2 id="alien-art">Alien Art</h2><p><a href="#alien-art">Alien Art</a> and '
             '<a href="https://example.org/a?b=1&amp;c=d#e">this</a> and <a href="mailto:hello@example.org">mail</a> '

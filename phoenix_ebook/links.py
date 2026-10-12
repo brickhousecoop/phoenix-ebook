@@ -2,7 +2,8 @@
 
 Writers mistype addresses and editors rename sections, so posts contain links
 an EPUB can't hold: in-post ``#`` links to sections that don't exist, addresses
-with spaces, quotes or missing schemes, and links with no text. Each is repaired
+with spaces, quotes or missing schemes, links with no text, and phrases split
+into one link per word (joined back into one link, unreported). Each is repaired
 when the intent is clear, otherwise unlinked (the words stay). Every change is
 marked (``phoenix_ebook.canonical``) for the build report, since a repair can be
 wrong.
@@ -19,6 +20,7 @@ from bs4 import BeautifulSoup
 from phoenix_ebook.canonical import LINK_REASON, LINK_REMOVED, LINK_REPAIRED, LINK_UNLINKED
 
 _HEADINGS = ["h1", "h2", "h3", "h4", "h5", "h6"]
+_MEDIA = ["img", "svg", "picture", "video", "audio", "iframe", "object"]  # a link around one of these isn't empty
 _SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)
 _DOMAIN_PATH = re.compile(r"^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/\S*)?$", re.I)  # "bsky.app/profile/x"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -49,6 +51,7 @@ def repair_links(soup: BeautifulSoup) -> None:
             anchor["id"] = anchor["name"].strip()
         del anchor["name"]
     _simplify_ids(soup)
+    _join_split_links(soup)
     for link in soup.find_all("a", href=True):
         _repair_address(soup, link)
     ids = {tag["id"] for tag in soup.find_all(id=True)}
@@ -56,12 +59,27 @@ def repair_links(soup: BeautifulSoup) -> None:
         if link["href"][1:] not in ids:
             _repair_section_link(soup, link, ids)
     for link in soup.find_all("a", href=True):
-        if not link.get_text(strip=True) and link.find(True) is None:
-            marker = soup.new_tag("span", attrs={LINK_REMOVED: _original(link)})
-            link.replace_with(marker)
+        if not link.get_text(strip=True) and link.find(_MEDIA) is None:
+            link.insert_before(soup.new_tag("span", attrs={LINK_REMOVED: _original(link)}))
+            link.unwrap()  # keeps any space (<a><em> </em></a>), so the words either side don't run together
 
 
 # ---------------------------------------------------------------- helpers
+
+def _join_split_links(soup) -> None:
+    """Join neighbouring links to the same address into one (#36). Not reported: nothing is lost.
+
+    Some editors store a linked phrase as one link per word and one per space between them.
+    """
+    for link in soup.find_all("a", href=True):
+        if link.parent is None:  # already joined into the link before it
+            continue
+        following = link.next_sibling
+        while getattr(following, "name", None) == "a" and following.get("href") == link["href"]:
+            link.extend(list(following.contents))
+            following.extract()
+            following = link.next_sibling
+
 
 def _original(link) -> str:
     return link.get(LINK_REPAIRED, link["href"])
