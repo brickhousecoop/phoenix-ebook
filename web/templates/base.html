@@ -131,10 +131,43 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  .signed-in {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 0.5rem 1rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .signed-in form { margin: 0; }
+  .signed-in button {
+    padding: 0.2rem 0.6rem;
+    background: var(--bg);
+    color: var(--accent);
+  }
+  input[type="email"], input[type="password"] {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.25rem;
+    font: inherit;
+    color: inherit;
+    background: var(--bg);
+  }
 {% block style %}{% endblock %}
 </style>
 </head>
 <body>
+{% if user %}
+<header class="signed-in">
+  <span>Signed in as {{ user }}</span>
+  <form method="post" action="/sign-out"><button type="submit">Sign out</button></form>
+</header>
+{% endif %}
 <main>
 {% block main %}{% endblock %}
 </main>

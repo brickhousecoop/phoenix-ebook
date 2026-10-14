@@ -231,14 +231,17 @@ In a manifest: `css = "my-styles.css"` under a `[style]` table.
 
 A FastAPI app in `web/` builds books from a form, without the command line; see [ADR 0002](docs/adr/0002-website-on-vercel-calls-the-library.md). Submitting the form checks everything first (missing or duplicate posts, more than 100 posts, ISBN/ISSN, a cover under 4.5 MB) and sends any problems back to the form. Then it builds the book, showing progress as it goes, and ends on a results page with the download link and every warning from the build, grouped by post and explained.
 
-Install its extra dependencies and run it:
+Install its extra dependencies, give yourself a user, and run it:
 
 ```bash
 uv pip install --python .venv/bin/python -r requirements-web.txt
+.venv/bin/python scripts/add_user.py you@example.org   # prints your password once
 .venv/bin/uvicorn web.main:app --reload
 ```
 
-Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command line (see "Store your API key" above).
+Then open <http://127.0.0.1:8000> and sign in. It uses the same key lookup as the command line (see "Store your API key" above).
+
+**Signing in** ([ADR 0003](docs/adr/0003-website-sign-in-own-passwords.md)): every page needs a signed-in user, who stays signed in for 30 days. Users and their password hashes come from the `PHOENIX_USERS` environment variable or, if it isn't set, `~/.phoenix_users.json`; `scripts/add_user.py` adds users, resets passwords (`EMAIL` again) and removes users (`--remove EMAIL`). Without either list nobody can sign in. `PHOENIX_SESSION_SECRET` signs the sign-in cookie; locally it can be left out, and restarting the site then signs you out. See [docs/website-setup.md](docs/website-setup.md#users).
 
 **Content pages** (copyright, foreword, notes, …) are uploads under Advanced, in the formats above except `.htm`/`.xhtml`. Uploads are kept for the next submission, so after a rebuild, or a form sent back with a problem, each one is offered again ("Keep foreword.docx from last time") instead of having to be chosen again. All files sent at once must add up to under 4.4 MB (a limit of Vercel's); the page checks before sending.
 
@@ -248,7 +251,7 @@ Then open <http://127.0.0.1:8000>. It uses the same key lookup as the command li
 
 **Closing the tab mid-build** doesn't stop the build, locally or on Vercel: it runs to the end and saves the book, but the link is never shown, so build it again.
 
-**On Vercel** the site runs at <https://phoenix-ebook.vercel.app>, behind Vercel's sign-in; [docs/website-setup.md](docs/website-setup.md) explains how it's set up, who can change what, and how to read its logs.
+**On Vercel** the site runs at <https://phoenix-ebook.vercel.app>; [docs/website-setup.md](docs/website-setup.md) explains how it's set up, who can change what, and how to read its logs.
 
 ## Extending phoenix-ebook
 

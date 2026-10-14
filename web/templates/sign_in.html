@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block style %}  form .hint { margin: 0.35rem 0 1rem; }
+{% endblock %}
+
+{% block main %}
+  <h1>Sign in to build Flaming Hydra books</h1>
+
+  {% if problem %}
+  <div id="error-summary" role="alert">
+    <h2>Signing in isn't possible right now</h2>
+    <p>{{ problem }}</p>
+  </div>
+  {% elif error %}
+  <div id="error-summary" role="alert" tabindex="-1" autofocus>
+    <h2>Couldn't sign you in</h2>
+    <p>{{ error }}</p>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/sign-in">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="email">Email address</label>
+    <input type="email" id="email" name="email" value="{{ email }}" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" required>
+    <p class="hint">Whoever runs this site gives out the passwords. Ask them if you've lost yours.</p>
+    <button type="submit">Sign in</button>
+  </form>
+{% endblock %}

@@ -4,3 +4,4 @@ uvicorn>=0.32
 jinja2>=3.1
 python-multipart>=0.0.12
 vercel>=0.11  # Vercel Blob uploads (vercel.blob)
+argon2-cffi>=23.1  # website sign-in password hashes (web/auth.py)

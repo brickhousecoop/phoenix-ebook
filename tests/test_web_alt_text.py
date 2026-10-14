@@ -7,15 +7,13 @@ import re
 
 import pytest
 import requests
-from fastapi.testclient import TestClient
 
-from conftest import FakeResponse, FakeSession, ok, png
+from conftest import FakeResponse, FakeSession, ok, png, web_client
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.platforms.ghost import GhostPlatform
 from phoenix_ebook.secrets import env_var_name
 from web import forms, runs, storage
 from web.forms import AltFix, SITE_URL, merge_alt_fixes
-from web.main import app
 
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 IMAGES = "https://storage.ghost.io/c/x/content/images/2026/04"
@@ -84,7 +82,7 @@ def rebuild_data(page, fixes):
 # ---------------------------------------------------------------- what the build records
 
 def test_build_records_current_alt_and_whether_the_image_is_the_link(built_specs):
-    page = first_build(TestClient(app))
+    page = first_build(web_client())
     by_url = {url: current for url, current in boxes(page).values()}
     assert by_url == {PHOTO: "", LINKED: "", WORDY: "", f"{IMAGES}/named.png": "IMG_5799.jpg"}
     assert page.count("Decorative image</label>") == 3  # not for the image that is the whole link
@@ -93,7 +91,7 @@ def test_build_records_current_alt_and_whether_the_image_is_the_link(built_specs
 
 
 def test_boxes_are_labelled_with_post_and_position_and_have_a_thumbnail():
-    page = first_build(TestClient(app))
+    page = first_build(web_client())
     assert '<label for="fix_alt_0">Alt text for image 1 of 4 in “The Post”</label>' in page
     assert f'src="{IMAGES.replace("/content/images/", "/content/images/size/w300/format/webp/")}/photo.png"' in page
     assert re.search(r'<img class="thumb" src="[^"]+" alt="" loading="lazy">', page)
@@ -131,7 +129,7 @@ def test_alt_text_keys_may_contain_equals_signs():
 # ---------------------------------------------------------------- the rebuild
 
 def test_rebuild_applies_fixes_and_stops_listing_those_images(built_specs):
-    client = TestClient(app)
+    client = web_client()
     page = first_build(client)
     rebuilt = client.post("/", data=rebuild_data(page, {
         PHOTO: "A red rectangle", LINKED: "The book, at the shop", f"{IMAGES}/wordy.png": None})).text
@@ -145,7 +143,7 @@ def test_rebuild_applies_fixes_and_stops_listing_those_images(built_specs):
 
 
 def test_rebuild_keeps_earlier_overrides_and_reports_unused_ones(built_specs):
-    client = TestClient(app)
+    client = web_client()
     page = first_build(client, alt_text="https://elsewhere.example/gone.png = Gone")
     rebuilt = client.post("/", data=rebuild_data(page, {PHOTO: "A red rectangle"})).text
     assert built_specs[-1].alt_text["https://elsewhere.example/gone.png"] == "Gone"
@@ -153,7 +151,7 @@ def test_rebuild_keeps_earlier_overrides_and_reports_unused_ones(built_specs):
 
 
 def test_rebuild_keeps_the_cover(built_specs):
-    client = TestClient(app)
+    client = web_client()
     page = client.post("/", data={"posts": "p", "title": "Covered"},
                        files={"cover": ("c.png", io.BytesIO(png("blue")), "image/png")}).text
     ref = re.search(r'name="kept_cover" value="([^"]+)"', page)[1]
@@ -171,7 +169,7 @@ def test_rebuild_keeps_the_cover(built_specs):
 
 
 def test_a_missing_kept_cover_is_a_form_error():
-    page = TestClient(app).post("/", data={"posts": "p", "kept_cover": "/books/nope/uploads/cover/c.png"}).text
+    page = web_client().post("/", data={"posts": "p", "kept_cover": "/books/nope/uploads/cover/c.png"}).text
     assert "Cover image: the file from the last build couldn" in page and 'id="error-summary"' in page
 
 

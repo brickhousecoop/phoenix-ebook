@@ -5,15 +5,18 @@ Run locally with ``uvicorn web.main:app --reload`` from the repo root.
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import threading
 from datetime import date
 from pathlib import Path
 from typing import Iterator
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse, Response,
+                               StreamingResponse)
 from fastapi.templating import Jinja2Templates
 
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
@@ -21,13 +24,22 @@ from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.models import Progress
 from phoenix_ebook.platforms.base import get_platform
 
-from web import problems, storage
+from web import auth, problems, storage
 from web.forms import (ALT_KINDS, CONTENT_FIELDS, MAX_POSTS, UPLOAD_FIELDS, CheckResult, RawForm, alt_fixes_from,
                        merge_alt_fixes)
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Who built what, and failed sign-ins: one line each in the site's logs (Vercel keeps them briefly).
+activity = logging.getLogger("web.activity")
+activity.setLevel(logging.INFO)
+if not activity.handlers:
+    activity.addHandler(logging.StreamHandler())
+
+SIGN_IN = "/sign-in"
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 STREAM_TYPE = "application/x-ndjson"
 ADVANCED_FIELDS = {
@@ -37,8 +49,9 @@ ADVANCED_FIELDS = {
 }
 
 
-def _form_page(raw: RawForm, result: CheckResult) -> str:
+def _form_page(raw: RawForm, result: CheckResult, user: str) -> str:
     return templates.get_template("index.html").render(
+        user=user,
         raw=raw,
         result=result,
         submitted=bool(result.errors),
@@ -48,15 +61,16 @@ def _form_page(raw: RawForm, result: CheckResult) -> str:
     )
 
 
-def _outcome_page(raw: RawForm, outcome: Outcome) -> str:
+def _outcome_page(raw: RawForm, outcome: Outcome, user: str) -> str:
     raw.kept = outcome.kept
     if not outcome.built:
-        return _form_page(raw, outcome.check)
+        return _form_page(raw, outcome.check, user)
     spec = outcome.check.spec
     platform = get_platform(spec.source.platform)
     fixable = [p for p in outcome.problems if p.kind in ALT_KINDS]
     fix_numbers = {id(p): n for n, p in enumerate(fixable)}
     return templates.get_template("results.html").render(
+        user=user,
         spec=spec,
         url=outcome.url,
         groups=problems.group_by_post(outcome.problems, outcome.check.posts),
@@ -81,7 +95,7 @@ def _announce(step: Progress) -> bool:
     return step.done in (1, step.total) or step.done % 10 == 0
 
 
-def _stream(raw: RawForm) -> Iterator[str]:
+def _stream(raw: RawForm, user: str) -> Iterator[str]:
     """Progress lines, then the final page, as newline-delimited JSON.
 
     The build runs in its own thread so a closed tab doesn't stop it: it
@@ -91,9 +105,11 @@ def _stream(raw: RawForm) -> Iterator[str]:
 
     def work() -> None:
         try:
-            events.put(("page", _outcome_page(raw, run(raw, lambda step: events.put(("progress", step))))))
+            outcome = run(raw, lambda step: events.put(("progress", step)), user=user)
+            _log_build(user, raw, outcome)
+            events.put(("page", _outcome_page(raw, outcome, user)))
         except Exception:  # rendering failed; run() itself never raises
-            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]))))
+            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]), user)))
             raise
 
     threading.Thread(target=work, daemon=True).start()
@@ -107,11 +123,93 @@ def _stream(raw: RawForm) -> Iterator[str]:
             return
 
 
+def _log_build(user: str, raw: RawForm, outcome: Outcome) -> None:
+    spec = outcome.check.spec
+    site = spec.source.url if spec and spec.source else "-"
+    count = sum(1 for line in raw.posts.splitlines() if line.strip())
+    activity.info("build: user=%s site=%s posts=%d %s", user, site, count,
+                  "built" if outcome.built else "not built")
+
+
+def _sign_in_page(next_path: str = "/", error: str | None = None, status: int = 200,
+                  email: str = "") -> HTMLResponse:
+    return HTMLResponse(templates.get_template("sign_in.html").render(
+        user=None, next=next_path, error=error, email=email, problem=auth.setup_problem()), status_code=status)
+
+
+def _same_origin(request: Request) -> bool:
+    """Whether a form was sent from this site's own pages: browsers name the sending page's
+    site in ``Origin`` on every POST, and another site's page can't change it. Behind a proxy
+    the site's own address may arrive as ``X-Forwarded-Host``."""
+    origin = request.headers.get("origin")
+    ours = {request.headers.get("host"), request.headers.get("x-forwarded-host")} - {None}
+    return bool(origin) and urlsplit(origin).netloc in ours
+
+
+def _safe_next(path: str) -> str:
+    """Where to go after signing in: a path on this site only, never another site."""
+    return path if path.startswith("/") and not path.startswith(("//", "/\\")) else "/"
+
+
+@app.middleware("http")
+async def require_sign_in(request: Request, call_next) -> Response:
+    """Every route but the sign-in page needs a signed-in user (``request.state.user``),
+    and every POST must come from this site's own pages."""
+    if request.method == "POST" and not _same_origin(request):
+        return PlainTextResponse("This form must be sent from the site's own pages.", status_code=403)
+    if request.url.path == SIGN_IN:
+        return await call_next(request)
+    user = auth.user_from_cookie(request.cookies.get(auth.COOKIE))
+    if user is None:
+        if request.method == "POST" and STREAM_TYPE in request.headers.get("accept", ""):
+            # The page's script shows whatever page comes back: here, the sign-in page.
+            page = _sign_in_page(error="You've been signed out. Sign in again, then build the book.")
+            return Response(json.dumps({"type": "page", "html": page.body.decode()}) + "\n",
+                            media_type=STREAM_TYPE, status_code=401)
+        next_path = request.url.path if request.method == "GET" else "/"
+        return RedirectResponse(f"{SIGN_IN}?next={quote(next_path)}", status_code=303)
+    request.state.user = user
+    return await call_next(request)
+
+
+@app.get(SIGN_IN, response_class=HTMLResponse)
+async def sign_in_form(next: str = "/") -> HTMLResponse:
+    return _sign_in_page(_safe_next(next))
+
+
+def _secure_cookie(request: Request) -> bool:
+    """Cookies are HTTPS-only, except on this computer's own address, which some browsers
+    won't give an HTTPS-only cookie over plain HTTP."""
+    return request.url.hostname not in LOCAL_HOSTS
+
+
+@app.post(SIGN_IN)
+async def sign_in(request: Request, email: str = Form(""), password: str = Form(""),
+                  next: str = Form("/")) -> Response:
+    user = await run_in_threadpool(auth.check_password, email, password) if not auth.setup_problem() else None
+    if user is None:
+        activity.info("sign-in failed: email=%s", auth.normalize(email) or "-")
+        return _sign_in_page(_safe_next(next), error="That email address and password don't match a user.",
+                             status=401, email=email.strip())
+    activity.info("sign-in: user=%s", user)
+    response = RedirectResponse(_safe_next(next), status_code=303)
+    response.set_cookie(auth.COOKIE, auth.make_cookie(user), max_age=auth.MAX_AGE,
+                        secure=_secure_cookie(request), httponly=True, samesite="lax")
+    return response
+
+
+@app.post("/sign-out")
+async def sign_out(request: Request) -> RedirectResponse:
+    response = RedirectResponse(SIGN_IN, status_code=303)
+    response.delete_cookie(auth.COOKIE, secure=_secure_cookie(request), httponly=True, samesite="lax")
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
-async def form() -> HTMLResponse:
+async def form(request: Request) -> HTMLResponse:
     # The server's date, which on Vercel is UTC; see #29.
     raw = RawForm(pub_date=date.today().isoformat())
-    return HTMLResponse(_form_page(raw, CheckResult(spec=None)))
+    return HTMLResponse(_form_page(raw, CheckResult(spec=None), request.state.user))
 
 
 @app.post("/")
@@ -153,10 +251,12 @@ async def submit(
         placeholders=placeholders is not None,
         sort_names=sort_names, alt_text=merge_alt_fixes(alt_text, alt_fixes_from(form)),
     )
+    user = request.state.user
     if STREAM_TYPE in request.headers.get("accept", ""):
-        return StreamingResponse(_stream(raw), media_type=STREAM_TYPE)
-    outcome = await run_in_threadpool(run, raw)
-    return HTMLResponse(_outcome_page(raw, outcome))
+        return StreamingResponse(_stream(raw, user), media_type=STREAM_TYPE)
+    outcome = await run_in_threadpool(run, raw, user=user)
+    _log_build(user, raw, outcome)
+    return HTMLResponse(_outcome_page(raw, outcome, user))
 
 
 @app.get(storage.LOCAL_URL_PREFIX + "/{token}/{name}")

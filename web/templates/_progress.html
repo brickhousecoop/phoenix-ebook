@@ -8,7 +8,7 @@
 <script>
 // Streams progress while building. Without it the form still works: the page waits, then shows the result.
 (() => {
-  const form = document.querySelector("form");
+  const form = document.getElementById("book-form");
   if (!form || !window.fetch || !window.TextDecoderStream) return;
   const panel = document.getElementById("progress");
   const text = document.getElementById("progress-text");

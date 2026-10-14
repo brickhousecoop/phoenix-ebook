@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -41,6 +42,44 @@ def no_stored_secrets(monkeypatch, tmp_path):
     monkeypatch.setattr(secrets, "keyring", None)
     for name in [n for n in os.environ if n.startswith("PHOENIX_SECRET_")]:
         monkeypatch.delenv(name)
+
+
+TEST_USER = "tester@example.org"
+TEST_PASSWORD = "correct horse battery staple"
+_test_users: str | None = None  # hashing takes a moment, so once per run
+
+
+def users_json() -> str:
+    """A ``PHOENIX_USERS`` value holding just ``TEST_USER``."""
+    global _test_users
+    if _test_users is None:
+        from web.auth import hash_password
+        _test_users = json.dumps({TEST_USER: hash_password(TEST_PASSWORD)})
+    return _test_users
+
+
+@pytest.fixture(autouse=True)
+def no_stored_users(monkeypatch, tmp_path):
+    """Website users stored on this machine never reach a test; tests get ``TEST_USER`` instead."""
+    try:
+        from web import auth
+    except ImportError:  # the website's dependencies aren't installed: library tests still run
+        return
+    monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "phoenix_users.json")
+    monkeypatch.delenv(auth.SECRET_ENV, raising=False)
+    monkeypatch.setenv(auth.USERS_ENV, users_json())
+
+
+def web_client(user: str | None = TEST_USER):
+    """A client for the website, sending forms the way a browser on the site does,
+    and signed in as ``user`` (None: signed out)."""
+    from fastapi.testclient import TestClient
+    from web import auth
+    from web.main import app
+    client = TestClient(app, base_url="https://testserver", headers={"Origin": "https://testserver"})
+    if user:
+        client.cookies.set(auth.COOKIE, auth.make_cookie(user))
+    return client
 
 
 @pytest.fixture(autouse=True)

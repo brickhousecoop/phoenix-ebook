@@ -5,11 +5,9 @@ import json
 import re
 import tomllib
 
-from fastapi.testclient import TestClient
 
-from conftest import REPO
+from conftest import REPO, web_client
 from web import storage
-from web.main import app
 
 
 def _requirements(name: str) -> set[str]:
@@ -51,7 +49,7 @@ def test_on_vercel_without_blob_the_site_says_so_instead_of_building(monkeypatch
     monkeypatch.setenv("VERCEL", "1")
     monkeypatch.delenv(storage.BLOB_TOKEN_ENV, raising=False)
     monkeypatch.setattr(storage, "LOCAL_DIR", tmp_path / "books")
-    page = TestClient(app).post("/", data={"posts": "anything"}).text
+    page = web_client().post("/", data={"posts": "anything"}).text
     assert "isn&#39;t connected to its Blob store" in page or "isn't connected to its Blob store" in page
     assert not (tmp_path / "books").exists()
 

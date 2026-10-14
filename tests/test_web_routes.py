@@ -7,14 +7,12 @@ import re
 from datetime import date
 
 import pytest
-from fastapi.testclient import TestClient
 
-from conftest import FakeResponse, FakeSession, jpeg, png
+from conftest import FakeResponse, FakeSession, jpeg, png, web_client
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.secrets import env_var_name
 from web import forms, storage
-from web.main import app
 
 KEY_ENV = env_var_name("ghost", "flaminghydra.ghost.io")
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
@@ -22,7 +20,7 @@ ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return web_client()
 
 
 @pytest.fixture(autouse=True)

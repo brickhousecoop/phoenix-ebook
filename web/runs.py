@@ -16,6 +16,7 @@ from phoenix_ebook.models import BuildProblem, Progress
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
+from web.auth import may_build
 from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, check_submission
 from web.storage import load_upload, new_folder, save_book, save_upload, setup_problem
 
@@ -52,8 +53,8 @@ def describe(step: Progress) -> str:
 
 
 def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
-        session: requests.Session | None = None) -> Outcome:
-    """Check ``raw`` and, if it passes, build and store the book.
+        session: requests.Session | None = None, *, user: str) -> Outcome:
+    """Check ``raw`` and, if it passes, build and store the book for ``user``.
 
     Never raises: a failure part-way ends with its message on the form, which
     is refilled from ``raw``. Uploads (new, or kept from the last build) live in
@@ -84,6 +85,9 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
                 failed = {e.field for e in check.errors}
                 return Outcome(check, kept=_keep({k: v for k, v in raw.paths.items() if k not in failed},
                                                  new_folder()))
+            if not may_build(user, check.spec.source):
+                return Outcome(CheckResult(spec=None, errors=[FormError(
+                    "posts", f"You can't build books from {check.spec.source.url}.")]))
             return _build_and_store(check, session, progress, raw.paths)
     except PhoenixError as exc:
         return Outcome(CheckResult(spec=None, errors=[FormError(exc.field, str(exc))]))
