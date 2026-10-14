@@ -77,3 +77,9 @@ A page showing only the title, placed between the front matter and the first cha
 **Placeholder page**:
 A front- or back-matter page filled with bracketed stand-in text because no content file was supplied for that section.
 _Avoid_: Stub page, dummy page
+
+## Website
+
+**User**:
+Someone allowed to sign in to the website and build books.
+_Avoid_: Member (a paying reader of a site), editor (the book's credited compiler), account
