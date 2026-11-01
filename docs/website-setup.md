@@ -98,8 +98,9 @@ Measured on 2026-10-07, building recent Flaming Hydra posts on the live site and
 |---|---|---|---|
 | 5 posts | 5 s | 8 s | — |
 | 100 posts (the most a book can have) | 110 s | 217 s | 81 MB |
+| 100 Welcome to Hell World posts, measured 2026-11-01 (more images per post) | under 7 min | about 1,200 s | 147 MB |
 
-- **Time limit:** 800 seconds per request, so a 100-post book uses about a seventh of it.
+- **Time limit:** 800 seconds per request. A 100-post book uses about a seventh of it on Flaming Hydra, and about half on Welcome to Hell World.
 - **Upload limit:** Vercel refuses any request over 4.5 MB with "413 Request Entity Too Large" before the site sees it. The form's page totals the chosen files first and says so if they're over 4.4 MB.
 - **A closed tab doesn't stop a build.** Tested on 2026-10-07: a 20-post build disconnected after a second still finished, and its complete book was saved to the Blob store. Nobody sees the link, though, so the answer is to build again. That uses another build's worth of time, which is one reason for the spend cap.
 - **Storage:** books are kept in the Blob store with no expiry; nothing deletes them yet (#33). Each book's folder also holds its uploads (cover, content pages), so a rebuild can reuse them.
