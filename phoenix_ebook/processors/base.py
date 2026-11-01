@@ -16,6 +16,34 @@ def _meaningful_children(tag) -> list:
     return [c for c in tag.children if not (isinstance(c, NavigableString) and not c.strip())]
 
 
+def blocks(soup) -> list:
+    """Top-level content blocks of the post, ignoring whitespace between them."""
+    return [c for c in soup.contents if not (isinstance(c, NavigableString) and not c.strip())]
+
+
+def is_filler(block) -> bool:
+    """A block that carries no content of its own: a rule, or an empty paragraph."""
+    if getattr(block, "name", None) == "hr":
+        return True
+    return getattr(block, "name", None) == "p" and not block.get_text(strip=True) and block.find("img") is None
+
+
+def previous_block(tag):
+    sibling = tag.previous_sibling
+    while sibling is not None and isinstance(sibling, NavigableString) and not sibling.strip():
+        sibling = sibling.previous_sibling
+    return sibling
+
+
+def drop_dangling_end(soup) -> None:
+    """After removing a trailing banner, drop rules and empty paragraphs left at the end."""
+    for block in reversed(blocks(soup)):
+        if is_filler(block):
+            block.decompose()
+        else:
+            break
+
+
 def _strip_web_markup(soup: BeautifulSoup) -> None:
     """Remove web-only markup that means nothing in an ebook, whatever the platform.
 
@@ -115,16 +143,6 @@ def get_processor(name: str) -> HtmlProcessor:
 
 
 register_processor(GenericProcessor)
-
-
-def recognized_site(platform: str, domain: str) -> bool:
-    """Whether any processor registered for ``platform`` claims ``domain`` via its ``sites``.
-
-    Used to tell a site's own addresses (which may span several hostnames, e.g.
-    a custom domain and a `*.ghost.io` one) from an address on some other site.
-    """
-    return any(cls.platform == platform and any(site in domain for site in cls.sites)
-               for cls in _REGISTRY.values())
 
 
 def select_processor(platform: str, domain: str, default: str) -> str:

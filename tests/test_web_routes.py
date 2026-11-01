@@ -14,6 +14,7 @@ from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.secrets import env_var_name
 from web import forms, storage
 
+SITE_URL = "https://flaminghydra.ghost.io"
 KEY_ENV = env_var_name("ghost", "flaminghydra.ghost.io")
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 
@@ -36,7 +37,7 @@ def _post_body(slug: str) -> bytes:
 
 
 def _wire_fake_posts(monkeypatch, *slugs):
-    routes = {f"{forms.SITE_URL}/ghost/api/admin/posts/slug/{slug}/": [
+    routes = {f"{SITE_URL}/ghost/api/admin/posts/slug/{slug}/": [
         FakeResponse(200, _post_body(slug), "application/json")] for slug in slugs}
     monkeypatch.setattr(forms.requests, "Session", lambda: FakeSession(routes))
 
@@ -102,14 +103,14 @@ def test_post_with_errors_shows_summary_tied_to_fields(client):
 
 
 def test_post_with_advanced_field_error_opens_advanced(client):
-    r = client.post("/", data={"posts": "good", "title": "T", "isbn": "bad"})
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "T", "isbn": "bad"})
     assert "<details open>" in r.text
 
 
 def test_post_without_errors_does_not_show_advanced_open(client, monkeypatch):
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     _wire_fake_posts(monkeypatch, "good")
-    r = client.post("/", data={"posts": "good", "title": "T"})
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"})
     assert "<details open>" not in r.text
 
 
@@ -118,7 +119,7 @@ def test_post_without_errors_does_not_show_advanced_open(client, monkeypatch):
 def test_post_that_passes_checks_builds_and_shows_results(client, monkeypatch):
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     _wire_fake_posts(monkeypatch, "good")
-    r = client.post("/", data={"posts": "good", "title": "My Book"})
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "My Book"})
     assert r.status_code == 200
     assert "Your book is ready" in r.text
     assert "My Book" in r.text
@@ -133,7 +134,7 @@ def test_post_with_oversized_cover_is_rejected(client, monkeypatch):
     big = jpeg(size=(2000, 2000))
     # Pad past the limit without touching the image bytes PIL needs to decode first.
     big = big + b"0" * max(0, forms.MAX_COVER_BYTES + 1 - len(big))
-    r = client.post("/", data={"posts": "good", "title": "T"},
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"},
                      files={"cover": ("c.jpg", io.BytesIO(big), "image/jpeg")})
     assert "must be under" in r.text
 
@@ -141,7 +142,7 @@ def test_post_with_oversized_cover_is_rejected(client, monkeypatch):
 def test_post_with_bad_cover_file_is_rejected(client, monkeypatch):
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     _wire_fake_posts(monkeypatch, "good")
-    r = client.post("/", data={"posts": "good", "title": "T"},
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"},
                      files={"cover": ("c.jpg", io.BytesIO(b"not an image"), "image/jpeg")})
     assert "isn&#39;t a recognisable image" in r.text or "isn't a recognisable image" in r.text
 
@@ -149,7 +150,7 @@ def test_post_with_bad_cover_file_is_rejected(client, monkeypatch):
 def test_post_with_valid_cover_passes(client, monkeypatch):
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     _wire_fake_posts(monkeypatch, "good")
-    r = client.post("/", data={"posts": "good", "title": "T"},
+    r = client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"},
                      files={"cover": ("c.png", io.BytesIO(png()), "image/png")})
     assert "Your book is ready" in r.text
 
@@ -160,13 +161,13 @@ def test_cover_temp_file_is_cleaned_up(client, monkeypatch, tmp_path):
     seen_paths = []
     real_build_spec = forms._build_spec
 
-    def spying_build_spec(raw, slugs):
+    def spying_build_spec(raw, slugs, blog):
         if raw.paths.get("cover"):
             seen_paths.append(raw.paths["cover"])
-        return real_build_spec(raw, slugs)
+        return real_build_spec(raw, slugs, blog)
 
     monkeypatch.setattr(forms, "_build_spec", spying_build_spec)
-    client.post("/", data={"posts": "good", "title": "T"},
+    client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"},
                 files={"cover": ("c.png", io.BytesIO(png()), "image/png")})
     assert seen_paths, "cover upload should have been saved to a temp path"
     from pathlib import Path

@@ -12,6 +12,8 @@ CALL_TO_ACTION_BANNER = "data-call-to-action-banner"
 # CALL_TO_ACTION_REMOVED_URL. The builder reports it and removes the marker.
 CALL_TO_ACTION_REMOVED = "data-call-to-action-removed"
 CALL_TO_ACTION_REMOVED_URL = "data-call-to-action-removed-url"
+# On that marker, what was removed if it wasn't a closing appeal (e.g. "button").
+CALL_TO_ACTION_REMOVED_AS = "data-call-to-action-removed-as"
 
 
 def mark_call_to_action(soup, link) -> None:

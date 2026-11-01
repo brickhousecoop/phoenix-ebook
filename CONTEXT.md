@@ -53,7 +53,7 @@ The fixed sequence of pages a reader moves through: title page, copyright, impri
 _Avoid_: Spine (the EPUB file format's name for it)
 
 **Contents page**:
-The in-book page (also the reading app's contents menu) listing the book from the foreword onward: foreword, introduction, chapters and back matter. Each chapter's entry is its title, optionally with its authors, depending on the site.
+The in-book page (also the reading app's contents menu) listing the book from the foreword onward: foreword, introduction, chapters and back matter. Each chapter's entry is its title, optionally with its authors, depending on the site (Flaming Hydra adds them; Welcome to Hell World doesn't).
 _Avoid_: TOC page, nav
 
 **Front matter**:

@@ -25,8 +25,8 @@ from phoenix_ebook.models import Progress
 from phoenix_ebook.platforms.base import get_platform
 
 from web import auth, problems, storage
-from web.forms import (ALT_KINDS, CONTENT_FIELDS, MAX_POSTS, UPLOAD_FIELDS, CheckResult, RawForm, alt_fixes_from,
-                       merge_alt_fixes)
+from web.forms import (ALT_KINDS, BLOGS, CONTENT_FIELDS, MAX_OPEN_ALT_BOXES, MAX_POSTS, UPLOAD_FIELDS, CheckResult,
+                       RawForm, alt_fixes_from, merge_alt_fixes)
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
@@ -42,6 +42,9 @@ SIGN_IN = "/sign-in"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 STREAM_TYPE = "application/x-ndjson"
+POST_EXAMPLES = " or ".join(f"<code>{blog.hosts[0]}/…</code>" for blog in BLOGS)
+# A rebuild sends 3 fields per alt-text box, and a 100-post book can have thousands of images.
+MAX_FORM_FIELDS = 30_000
 ADVANCED_FIELDS = {
     "series", "series_number", "publisher", "description", "pub_date", "lang", "isbn", "issn",
     "rights", "image_max_width", "image_quality", "keep_original_images", "placeholders",
@@ -57,6 +60,8 @@ def _form_page(raw: RawForm, result: CheckResult, user: str) -> str:
         submitted=bool(result.errors),
         advanced_open=any(e.field in ADVANCED_FIELDS for e in result.errors),
         max_posts=MAX_POSTS,
+        blogs=BLOGS,
+        post_examples=POST_EXAMPLES,
         placeholder_pages=PLACEHOLDER_TEXT,
     )
 
@@ -78,6 +83,8 @@ def _outcome_page(raw: RawForm, outcome: Outcome, user: str) -> str:
         counts={code: sum(p.kind == code for p in outcome.problems) for code in {p.kind for p in outcome.problems}},
         kind=problems.kind,
         fix_count=len(fixable),
+        alt_kinds=ALT_KINDS,
+        collapse_alt=len(fixable) > MAX_OPEN_ALT_BOXES,
         fix_number=lambda p: fix_numbers.get(id(p)),
         thumbnail=platform.thumbnail_url,
         canonical=platform.canonical_image_url,
@@ -86,6 +93,8 @@ def _outcome_page(raw: RawForm, outcome: Outcome, user: str) -> str:
         result=CheckResult(spec=None),
         advanced_open=False,
         max_posts=MAX_POSTS,
+        blogs=BLOGS,
+        post_examples=POST_EXAMPLES,
         placeholder_pages=PLACEHOLDER_TEXT,
     )
 
@@ -213,43 +222,28 @@ async def form(request: Request) -> HTMLResponse:
 
 
 @app.post("/")
-async def submit(
-    request: Request,
-    posts: str = Form(""),
-    title: str = Form(""),
-    subtitle: str = Form(""),
-    editor: str = Form(""),
-    series: str = Form(""),
-    series_number: str = Form(""),
-    publisher: str = Form(""),
-    description: str = Form(""),
-    pub_date: str = Form(""),
-    lang: str = Form("en"),
-    isbn: str = Form(""),
-    issn: str = Form(""),
-    rights: str = Form(""),
-    image_max_width: str = Form(""),
-    image_quality: str = Form(""),
-    keep_original_images: str | None = Form(None),
-    placeholders: str | None = Form(None),
-    sort_names: str = Form(""),
-    alt_text: str = Form(""),
-):
-    form = await request.form()
+async def submit(request: Request):
+    # Read here, not through Form() parameters: those would use the form parser's limit of 1,000 fields.
+    form = await request.form(max_fields=MAX_FORM_FIELDS)
+
+    def text(name: str) -> str:
+        value = form.get(name, "")
+        return value if isinstance(value, str) else ""
+
     files = {}
     for name in UPLOAD_FIELDS:
         upload = form.get(name)
         if getattr(upload, "filename", None) and (data := await upload.read()):
             files[name] = (data, upload.filename)
     raw = RawForm(
-        posts=posts, title=title, subtitle=subtitle, editor=editor,
+        posts=text("posts"), title=text("title"), subtitle=text("subtitle"), editor=text("editor"),
         files=files, kept={name: form[f"kept_{name}"] for name in UPLOAD_FIELDS if form.get(f"kept_{name}")},
-        series=series, series_number=series_number, publisher=publisher, description=description,
-        pub_date=pub_date, lang=lang or "en", isbn=isbn, issn=issn, rights=rights,
-        image_max_width=image_max_width, image_quality=image_quality,
-        keep_original_images=keep_original_images is not None,
-        placeholders=placeholders is not None,
-        sort_names=sort_names, alt_text=merge_alt_fixes(alt_text, alt_fixes_from(form)),
+        series=text("series"), series_number=text("series_number"), publisher=text("publisher"),
+        description=text("description"), pub_date=text("pub_date"), lang=text("lang") or "en", isbn=text("isbn"),
+        issn=text("issn"), rights=text("rights"), image_max_width=text("image_max_width"),
+        image_quality=text("image_quality"), keep_original_images="keep_original_images" in form,
+        placeholders="placeholders" in form,
+        sort_names=text("sort_names"), alt_text=merge_alt_fixes(text("alt_text"), alt_fixes_from(form)),
     )
     user = request.state.user
     if STREAM_TYPE in request.headers.get("accept", ""):

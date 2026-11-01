@@ -16,7 +16,9 @@ from phoenix_ebook.platforms.ghost import GhostPlatform
 from phoenix_ebook.processors.base import get_processor
 from phoenix_ebook.secrets import env_var_name
 from web import main, problems, runs, storage
-from web.forms import SITE_URL, RawForm
+from web.forms import RawForm
+
+SITE_URL = "https://flaminghydra.ghost.io"
 
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 IMG = "https://img.test"
@@ -78,7 +80,7 @@ def test_progress_lines(step, expected):
 
 def test_stream_sends_progress_then_the_results_page(monkeypatch):
     wire(monkeypatch, {**post_route("a"), **post_route("b")})
-    lines = stream(web_client(), {"posts": "a\nb", "title": "Streamed"})
+    lines = stream(web_client(), {"posts": "flaminghydra.com/a\nflaminghydra.com/b", "title": "Streamed"})
     progress = [line["message"] for line in lines if line["type"] == "progress"]
     assert progress == ["Fetching post 1 of 2: A", "Fetching post 2 of 2: B",
                         "Downloading images for post 1 of 2: A", "Downloading images for post 2 of 2: B",
@@ -103,7 +105,7 @@ def test_stream_with_form_errors_ends_on_the_refilled_form(monkeypatch):
 def test_closing_the_tab_doesnt_stop_the_build(monkeypatch, tmp_path):
     """The stream's reader going away (a closed tab) leaves the build running to the end."""
     wire(monkeypatch, {**post_route("a"), **post_route("b")})
-    events = main._stream(RawForm(posts="a\nb", title="Abandoned"), TEST_USER)
+    events = main._stream(RawForm(posts="flaminghydra.com/a\nflaminghydra.com/b", title="Abandoned"), TEST_USER)
     assert json.loads(next(events))["type"] == "progress"
     events.close()
     deadline = time.monotonic() + 10
@@ -119,7 +121,7 @@ def test_results_page_groups_warnings_by_post_and_explains_them(monkeypatch):
     routes = {**post_route("a", html_a, "Post A"), **post_route("b", "<p>fine</p>", "Post B"),
               f"{IMG}/gone.png": [FakeResponse(404)], f"{IMG}/ok.png": [ok(png())]}
     wire(monkeypatch, routes)
-    page = web_client().post("/", data={"posts": "a\nb", "title": "Warned",
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a\nflaminghydra.com/b", "title": "Warned",
                                            "alt_text": "https://img.test/elsewhere.png = x"}).text
 
     assert page.index("Download “Warned”") < page.index("What the build changed")
@@ -135,7 +137,7 @@ def test_results_page_groups_warnings_by_post_and_explains_them(monkeypatch):
 
 def test_results_page_without_warnings(monkeypatch):
     wire(monkeypatch, post_route("a"))
-    page = web_client().post("/", data={"posts": "a"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a"}).text
     assert "the build had no warnings" in page
 
 
@@ -154,10 +156,10 @@ def test_site_down_while_fetching_returns_to_the_form(monkeypatch):
     routes = {**post_route("a"),
               f"{SITE_URL}/ghost/api/admin/posts/slug/b/": [requests.ConnectionError("down")]}
     wire(monkeypatch, routes)
-    page = web_client().post("/", data={"posts": "a\nb", "title": "Kept"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a\nflaminghydra.com/b", "title": "Kept"}).text
     assert 'id="error-summary"' in page
     assert "can&#39;t reach" in page or "can't reach" in page
-    assert 'value="Kept"' in page and "a\nb</textarea>" in page
+    assert 'value="Kept"' in page and "flaminghydra.com/a\nflaminghydra.com/b</textarea>" in page
 
 
 def test_failure_during_the_build_returns_to_the_form(monkeypatch):
@@ -166,14 +168,14 @@ def test_failure_during_the_build_returns_to_the_form(monkeypatch):
     def broken_build(*args, **kwargs):
         raise PhoenixError("the disk is full")
     monkeypatch.setattr(runs, "build", broken_build)
-    page = web_client().post("/", data={"posts": "a", "title": "Kept"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a", "title": "Kept"}).text
     assert "the disk is full" in page and 'value="Kept"' in page
 
 
 def test_a_bug_is_reported_as_a_bug(monkeypatch):
     wire(monkeypatch, post_route("a"))
     monkeypatch.setattr(runs, "build", lambda *a, **k: 1 / 0)
-    page = web_client().post("/", data={"posts": "a"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a"}).text
     assert "bug in phoenix-ebook" in page
 
 
@@ -183,7 +185,7 @@ def test_storage_failure_is_reported(monkeypatch):
     def refuse(path, title, folder):
         raise OSError("no space left")
     monkeypatch.setattr(runs, "save_book", refuse)
-    page = web_client().post("/", data={"posts": "a"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/a"}).text
     assert "built but couldn" in page and "no space left" in page
 
 
@@ -192,7 +194,7 @@ def test_storage_failure_is_reported(monkeypatch):
 def test_local_books_are_served_by_the_site(monkeypatch):
     wire(monkeypatch, post_route("a"))
     client = web_client()
-    page = client.post("/", data={"posts": "a", "title": "Fender: Bender"}).text
+    page = client.post("/", data={"posts": "flaminghydra.com/a", "title": "Fender: Bender"}).text
     url = page.split('class="download" href="')[1].split('"')[0]
     assert url.startswith("/books/") and url.endswith("/Fender-Bender.epub")
     r = client.get(url)

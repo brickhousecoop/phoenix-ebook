@@ -4,7 +4,7 @@ from phoenix_ebook.processors.base import (
     get_processor,
     register_processor,
 )
-from phoenix_ebook.processors import flaminghydra  # noqa: F401 — side-effect registration
+from phoenix_ebook.processors import flaminghydra, hellworld  # noqa: F401 — side-effect registration
 
 __all__ = [
     "GenericProcessor",

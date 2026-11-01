@@ -4,8 +4,9 @@
       <legend>Posts</legend>
 
       {{ field("posts", "Post addresses (required)",
-          "One per line, in reading order: a full address (<code>flaminghydra.com/…</code> or "
-          ~ "<code>flaminghydra.ghost.io/…</code>) or just the slug. Up to " ~ max_posts ~ " posts.",
+          "One per line, in reading order: each post’s full address, all from one blog ("
+          ~ post_examples
+          ~ "). Up to " ~ max_posts ~ " posts.",
           rows=8) }}
 
       {{ field("title", "Title",

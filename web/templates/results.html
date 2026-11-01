@@ -53,49 +53,29 @@
   </ul>
   {% if fix_count %}
   <p>Below, you can write alt text for the {{ fix_count }} image{{ '' if fix_count == 1 else 's' }} that
-    need{{ 's' if fix_count == 1 else '' }} it, then rebuild the book.</p>
+    need{{ 's' if fix_count == 1 else '' }} it, then rebuild the book.{% if collapse_alt %} Each post’s images
+    are folded away under its name: open a list to see them.{% endif %}</p>
   {% endif %}
 
   {% for group in groups %}
   <section class="post-problems" aria-labelledby="post-{{ loop.index }}">
     <h3 id="post-{{ loop.index }}">{{ group.title }}</h3>
     <ul>
-      {% for p in group.problems %}
-      {% set label = kind(p.kind).label %}
-      {% set n = fix_number(p) %}
-      <li class="problem">
-        <span class="problem-kind">{{ label }}</span>{% if p.location %}
-        <span class="problem-where">({{ p.location }})</span>{% endif %}
-        {%- if p.detail | lower != label | lower %}: {{ p.detail }}{% endif %}
-        {%- if p.caption %} — caption: “{{ p.caption }}”{% endif %}
-        {% if p.url %}<br><span class="problem-url">{{ p.url }}</span>{% endif %}
-        {% if n is not none %}
-        <div class="alt-fix">
-          <img class="thumb" src="{{ thumbnail(p.url) }}" alt="" loading="lazy">
-          <div>
-            <label for="fix_alt_{{ n }}">Alt text for {{ p.location }} in “{{ group.title }}”</label>
-            <p class="hint" id="fix_hint_{{ n }}">
-              {%- if p.is_link %}This image is a link: describe where it goes (e.g., the book or article it opens).
-              {%- else %}Describe what the image shows, in a sentence or two.{% endif %}</p>
-            <input type="hidden" name="fix_url_{{ n }}" value="{{ canonical(p.url) }}">
-            <input type="hidden" name="fix_current_{{ n }}" value="{{ p.alt or '' }}">
-            <textarea id="fix_alt_{{ n }}" name="fix_alt_{{ n }}" rows="2"
-              aria-describedby="fix_hint_{{ n }}">{{ p.alt or '' }}</textarea>
-            {% if not p.is_link %}
-            <div class="checkbox">
-              <input type="checkbox" id="fix_decorative_{{ n }}" name="fix_decorative_{{ n }}"
-                aria-describedby="fix_decorative_hint_{{ n }}">
-              <label for="fix_decorative_{{ n }}">Decorative image</label>
-              <p class="hint" id="fix_decorative_hint_{{ n }}">Adds nothing to the text (e.g., a divider), so
-                screen readers skip it.</p>
-            </div>
-            {% endif %}
-          </div>
-        </div>
-        {% endif %}
-      </li>
+      {% for p in group.problems if not (collapse_alt and p.kind in alt_kinds) %}
+      {% include "_problem.html" %}
       {% endfor %}
     </ul>
+    {% set alt_problems = group.problems | selectattr("kind", "in", alt_kinds) | list %}
+    {% if collapse_alt and alt_problems %}
+    <details class="alt-fixes">
+      <summary>{{ alt_problems | length }} image{{ '' if alt_problems | length == 1 else 's' }} need{{ 's' if alt_problems | length == 1 else '' }} alt text</summary>
+      <ul>
+        {% for p in alt_problems %}
+        {% include "_problem.html" %}
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
   </section>
   {% endfor %}
   {% else %}

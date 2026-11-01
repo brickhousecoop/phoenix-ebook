@@ -13,7 +13,9 @@ from phoenix_ebook import platforms, processors  # noqa: F401 — ensures regist
 from phoenix_ebook.platforms.ghost import GhostPlatform
 from phoenix_ebook.secrets import env_var_name
 from web import forms, runs, storage
-from web.forms import AltFix, SITE_URL, merge_alt_fixes
+from web.forms import AltFix, merge_alt_fixes
+
+SITE_URL = "https://flaminghydra.ghost.io"
 
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 IMAGES = "https://storage.ghost.io/c/x/content/images/2026/04"
@@ -51,7 +53,7 @@ def built_specs(monkeypatch):
 
 
 def first_build(client, **extra):
-    return client.post("/", data={"posts": "p", "title": "Alt", **extra}).text
+    return client.post("/", data={"posts": "flaminghydra.com/p", "title": "Alt", **extra}).text
 
 
 def boxes(page):
@@ -152,7 +154,7 @@ def test_rebuild_keeps_earlier_overrides_and_reports_unused_ones(built_specs):
 
 def test_rebuild_keeps_the_cover(built_specs):
     client = web_client()
-    page = client.post("/", data={"posts": "p", "title": "Covered"},
+    page = client.post("/", data={"posts": "flaminghydra.com/p", "title": "Covered"},
                        files={"cover": ("c.png", io.BytesIO(png("blue")), "image/png")}).text
     ref = re.search(r'name="kept_cover" value="([^"]+)"', page)[1]
     assert ref.startswith("/books/") and ref.endswith("/uploads/cover/c.png")
@@ -169,7 +171,7 @@ def test_rebuild_keeps_the_cover(built_specs):
 
 
 def test_a_missing_kept_cover_is_a_form_error():
-    page = web_client().post("/", data={"posts": "p", "kept_cover": "/books/nope/uploads/cover/c.png"}).text
+    page = web_client().post("/", data={"posts": "flaminghydra.com/p", "kept_cover": "/books/nope/uploads/cover/c.png"}).text
     assert "Cover image: the file from the last build couldn" in page and 'id="error-summary"' in page
 
 
@@ -182,3 +184,47 @@ def test_a_missing_kept_cover_is_a_form_error():
 def test_kept_uploads_come_only_from_our_storage(ref, monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **k: pytest.fail("fetched " + ref))
     assert storage.load_upload(ref) is None
+
+
+# ---------------------------------------------------------------- many boxes (#38)
+
+def built_with_images(monkeypatch, counts):
+    """A website build of posts p0, p1, … with the given number of images missing alt text, plus a warning."""
+    routes = {}
+    for i, count in enumerate(counts):
+        html = "".join(f'<img src="{IMAGES}/{i}-{n}.png">' for n in range(count)) + '<a href="https://x.example/"></a>'
+        body = {"posts": [{"slug": f"p{i}", "title": f"Post {i}", "authors": [], "html": html}]}
+        routes[f"{SITE_URL}/ghost/api/admin/posts/slug/p{i}/"] = [FakeResponse(200, json.dumps(body).encode(),
+                                                                              "application/json")]
+        for n in range(count):
+            routes[f"{IMAGES}/{i}-{n}.png"] = [ok(png())]
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession(routes))
+    posts = "\n".join(f"flaminghydra.com/p{i}" for i in range(len(counts)))
+    return web_client().post("/", data={"posts": posts, "title": "Many"}).text
+
+
+def test_alt_boxes_stay_open_up_to_the_limit(monkeypatch):
+    page = built_with_images(monkeypatch, [forms.MAX_OPEN_ALT_BOXES])
+    assert '<details class="alt-fixes">' not in page
+    assert len(boxes(page)) == forms.MAX_OPEN_ALT_BOXES
+
+
+def test_alt_boxes_collapse_per_post_over_the_limit_and_other_warnings_stay_open(monkeypatch):
+    page = built_with_images(monkeypatch, [forms.MAX_OPEN_ALT_BOXES, 1])
+    assert page.count('<details class="alt-fixes">') == 2
+    assert f"{forms.MAX_OPEN_ALT_BOXES} images need alt text" in page
+    assert "1 image needs alt text" in page
+    assert len(boxes(page)) == forms.MAX_OPEN_ALT_BOXES + 1  # every image can still be fixed
+    outside = re.sub(r'<details class="alt-fixes">.*?</details>', "", page, flags=re.S)
+    assert "fix_url_" not in outside
+    assert "https://x.example/" in outside  # the link warning isn't folded away
+
+
+def test_rebuild_with_hundreds_of_boxes_uses_the_text(monkeypatch, built_specs):
+    data = {"posts": "flaminghydra.com/p", "title": "Alt"}
+    for n in range(450):
+        data |= {f"fix_url_{n}": f"{IMAGES}/{n}.png", f"fix_current_{n}": "", f"fix_alt_{n}": f"Picture {n}"}
+    # A browser sends this form as multipart, the kind with a limit on its number of fields.
+    response = web_client().post("/", data=data, files={"cover": ("", b"", "application/octet-stream")})
+    assert response.status_code == 200
+    assert built_specs[-1].alt_text[f"{IMAGES}/449.png"] == "Picture 449"

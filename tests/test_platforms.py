@@ -86,6 +86,8 @@ def test_other_platform_default_processor(other_platform):
     ("https://flaminghydra.ghost.io", "flaminghydra"),
     ("https://flaminghydra.com", "flaminghydra"),
     ("https://www.flaminghydra.com", "flaminghydra"),
+    ("https://hellworld.ghost.io", "hellworld"),
+    ("https://www.welcometohellworld.com", "hellworld"),
     ("https://another.ghost.io", "generic"),
 ])
 def test_ghost_processor_selection(url, expected):

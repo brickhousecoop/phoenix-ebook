@@ -181,6 +181,24 @@ def test_tweet_becomes_post_card_with_readable_date_and_media_link():
     assert card.find("script") is None
 
 
+def test_tweet_with_only_an_empty_link_shows_who_when_and_a_link():
+    card = card_of('<figure class="kg-card kg-embed-card"><blockquote class="twitter-tweet">'
+                   '<a href="https://twitter.com/clips4clicks/status/1794387135623200864?s=20"></a></blockquote></figure>')
+    assert text(card.find(class_="label")) == "Post on X"
+    assert card.blockquote is None
+    source = card.find(class_="source")
+    assert text(source) == "@clips4clicks · 25 May 2024 · view on X"
+    assert source.a["href"] == "https://twitter.com/clips4clicks/status/1794387135623200864"
+
+
+def test_empty_tweet_link_to_an_account_or_an_old_tweet_has_no_date():
+    for href, words in (("https://twitter.com/lukeoneil47", "@lukeoneil47 · view on X"),
+                        ("https://twitter.com/jack/status/20", "@jack · view on X"),
+                        ("https://x.com/i/status/1794387135623200864", "25 May 2024 · view on X")):
+        card = card_of(f'<figure class="kg-card kg-embed-card"><blockquote class="twitter-tweet"><a href="{href}"></a></blockquote></figure>')
+        assert text(card.find(class_="source")) == words
+
+
 def test_bluesky_post_paragraphs_and_iso_timestamp():
     card = card_of(BLUESKY)
     assert text(card.find(class_="label")) == "Post on Bluesky"

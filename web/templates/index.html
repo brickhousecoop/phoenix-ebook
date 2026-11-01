@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Build a Flaming Hydra book{% endblock %}
+{% block title %}Build a book{% endblock %}
 
 {% block main %}
-  <h1>Build a Flaming Hydra book</h1>
-  <p class="hint">Turns a list of Flaming Hydra posts into an EPUB. Any post the configured
-    key can read is fair game, drafts and paid posts included.</p>
+  <h1>Build a book</h1>
+  <p class="hint">Turns a list of posts from {{ blogs | map("attr", "name") | join(" or ") }} into an EPUB. Any post
+    the configured key can read is fair game, drafts and paid posts included.</p>
 
   {% if submitted %}
   <div id="error-summary" role="alert" tabindex="-1" autofocus>

@@ -11,6 +11,7 @@ from conftest import TEST_PASSWORD, TEST_USER, FakeResponse, FakeSession, web_cl
 from phoenix_ebook.secrets import env_var_name
 from web import auth, forms, main, storage
 
+SITE_URL = "https://flaminghydra.ghost.io"
 KEY_ENV = env_var_name("ghost", "flaminghydra.ghost.io")
 ADMIN_KEY = "0123456789abcdef01234567:" + "ab" * 32
 
@@ -23,7 +24,7 @@ def books_dir(monkeypatch, tmp_path):
 
 def wire_post(monkeypatch, slug="good"):
     body = json.dumps({"posts": [{"slug": slug, "title": slug, "authors": [], "html": "<p>x</p>"}]}).encode()
-    routes = {f"{forms.SITE_URL}/ghost/api/admin/posts/slug/{slug}/": [FakeResponse(200, body, "application/json")]}
+    routes = {f"{SITE_URL}/ghost/api/admin/posts/slug/{slug}/": [FakeResponse(200, body, "application/json")]}
     monkeypatch.setenv(KEY_ENV, ADMIN_KEY)
     monkeypatch.setattr(forms.requests, "Session", lambda: FakeSession(routes))
 
@@ -44,7 +45,7 @@ def test_signed_out_form_redirects_to_sign_in():
 def test_signed_out_post_builds_nothing(monkeypatch):
     built = []
     monkeypatch.setattr(main, "run", lambda *a, **k: built.append(1))
-    r = web_client(None).post("/", data={"posts": "good"}, follow_redirects=False)
+    r = web_client(None).post("/", data={"posts": "flaminghydra.com/good"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith("/sign-in")
     assert not built
 
@@ -52,7 +53,7 @@ def test_signed_out_post_builds_nothing(monkeypatch):
 def test_signed_out_streamed_post_gets_the_sign_in_page_as_its_page(monkeypatch):
     built = []
     monkeypatch.setattr(main, "run", lambda *a, **k: built.append(1))
-    r = web_client(None).post("/", data={"posts": "good"}, headers={"Accept": main.STREAM_TYPE})
+    r = web_client(None).post("/", data={"posts": "flaminghydra.com/good"}, headers={"Accept": main.STREAM_TYPE})
     assert r.status_code == 401
     message = json.loads(r.text.splitlines()[0])
     assert message["type"] == "page"
@@ -164,7 +165,7 @@ def test_post_from_elsewhere_is_refused(origin, monkeypatch):
         del client.headers["Origin"]
     else:
         client.headers["Origin"] = origin
-    assert client.post("/", data={"posts": "good"}).status_code == 403
+    assert client.post("/", data={"posts": "flaminghydra.com/good"}).status_code == 403
     assert client.post("/sign-in", data={"email": TEST_USER, "password": TEST_PASSWORD}).status_code == 403
     assert not built
 
@@ -211,17 +212,17 @@ def test_on_vercel_without_a_session_secret_nobody_signs_in(monkeypatch):
 def test_build_is_logged_with_user_site_and_count(monkeypatch, caplog):
     wire_post(monkeypatch)
     with caplog.at_level(logging.INFO, logger="web.activity"):
-        page = web_client().post("/", data={"posts": "good", "title": "T"}).text
+        page = web_client().post("/", data={"posts": "flaminghydra.com/good", "title": "T"}).text
     assert "Your book is ready" in page
-    assert f"build: user={TEST_USER} site={forms.SITE_URL} posts=1 built" in caplog.text
+    assert f"build: user={TEST_USER} site={SITE_URL} posts=1 built" in caplog.text
 
 
 def test_may_build_is_asked_before_building(monkeypatch):
     wire_post(monkeypatch)
     asked = []
     monkeypatch.setattr("web.runs.may_build", lambda user, source: asked.append((user, source.url)) or False)
-    page = web_client().post("/", data={"posts": "good", "title": "T"}).text
-    assert asked == [(TEST_USER, forms.SITE_URL)]
+    page = web_client().post("/", data={"posts": "flaminghydra.com/good", "title": "T"}).text
+    assert asked == [(TEST_USER, SITE_URL)]
     assert "can&#39;t build books from" in page or "can't build books from" in page
     assert "Your book is ready" not in page
 
@@ -229,7 +230,7 @@ def test_may_build_is_asked_before_building(monkeypatch):
 def test_every_page_shows_who_is_signed_in_and_sign_out(monkeypatch):
     wire_post(monkeypatch)
     client = web_client()
-    for html in (client.get("/").text, client.post("/", data={"posts": "good", "title": "T"}).text):
+    for html in (client.get("/").text, client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"}).text):
         assert f"Signed in as {TEST_USER}" in html
         assert 'action="/sign-out"' in html
 
@@ -238,7 +239,7 @@ def test_progress_script_handles_only_the_book_form(monkeypatch):
     """The Sign out button is a form too; the script that streams builds must leave it alone."""
     wire_post(monkeypatch)
     client = web_client()
-    for html in (client.get("/").text, client.post("/", data={"posts": "good", "title": "T"}).text):
+    for html in (client.get("/").text, client.post("/", data={"posts": "flaminghydra.com/good", "title": "T"}).text):
         assert 'document.getElementById("book-form")' in html
         assert html.count('id="book-form"') == 1
         assert 'querySelector("form")' not in html

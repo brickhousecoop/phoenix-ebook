@@ -20,7 +20,7 @@ from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
-                                     CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
+                                     CALL_TO_ACTION_REMOVED_AS, CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
                                      EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
@@ -471,7 +471,8 @@ def _report_calls_to_action(soup, post: Post, problems: list[BuildProblem]) -> N
     for marker in soup.find_all(attrs={CALL_TO_ACTION_REMOVED: True}):
         problems.append(BuildProblem(kind="call-to-action", post_slug=post.slug,
                                      url=marker.get(CALL_TO_ACTION_REMOVED_URL),
-                                     detail=f"closing appeal removed: \"{marker[CALL_TO_ACTION_REMOVED][:200]}\""))
+                                     detail=f"{marker.get(CALL_TO_ACTION_REMOVED_AS, 'closing appeal')} removed: "
+                                            f"\"{marker[CALL_TO_ACTION_REMOVED][:200]}\""))
         marker.decompose()
 
 

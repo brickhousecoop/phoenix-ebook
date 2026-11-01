@@ -48,6 +48,8 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
    - **Environments:** **Production** and **Preview** (not Development);
    - **Sensitive:** on, so the value can't be read back from the dashboard.
 
+   Each blog has its own key, added the same way: `PHOENIX_SECRET_GHOST_HELLWORLD_GHOST_IO` for Welcome to Hell World (from its own Ghost Admin). The blogs the website builds from are listed in `BLOGS` in `web/forms.py`.
+
 6. **Set up the users**, as in [Users](#users) below.
 
 7. **Redeploy**, so the deployment picks up the variables: **Deployments → the latest → ⋯ → Redeploy**. Then open the address in a private window: you should get the site's sign-in page. Sign in, build a small book, and download it.

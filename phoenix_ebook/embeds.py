@@ -7,7 +7,7 @@ here. See "Link cards" in docs/canonical-html.md for the form produced.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -178,10 +178,33 @@ def _tweet(soup, blockquote: Tag) -> Tag:
     byline = _byline_text(blockquote)
     source: Source = [byline] if byline else []
     if date_link is not None:
-        source.append(_a(soup, href, _tweet_date(date_link.get_text(strip=True))))
+        if date_link.get_text(strip=True):
+            source.append(_a(soup, href, _tweet_date(date_link.get_text(strip=True))))
+        else:
+            source += _tweet_source_from_address(soup, href)
     if media:
         source.append(["attached media: ", _a(soup, media[0], "view on X")])
     return link_card(soup, "post", "Post on X", quote_=_paragraphs(soup, body), source=source)
+
+
+# Tweet ids from here on hold their time: milliseconds since Twitter's epoch, above the low 22 bits.
+_FIRST_TIMED_TWEET_ID = 29700859247
+_TWITTER_EPOCH_MS = 1288834974657
+
+
+def _tweet_source_from_address(soup, href: str) -> Source:
+    """A tweet embed with an empty link (posts imported from Substack have no text at all):
+    the writer and date from its address, and the link in words the reader can follow."""
+    source: Source = []
+    if match := re.match(r"/(\w+)(?:/status(?:es)?/(\d+))?", urlsplit(href).path):
+        handle, tweet_id = match.groups()
+        if handle != "i":  # /i/status/… names no one
+            source.append(f"@{handle}")
+        if tweet_id and int(tweet_id) >= _FIRST_TIMED_TWEET_ID:
+            posted = datetime.fromtimestamp(((int(tweet_id) >> 22) + _TWITTER_EPOCH_MS) / 1000, timezone.utc)
+            source.append(format_date(posted.date().isoformat()))
+    source.append(_a(soup, href, "view on X"))
+    return source
 
 
 def _tweet_date(text: str) -> str:

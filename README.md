@@ -9,6 +9,7 @@ phoenix-ebook fetches posts from a publishing platform, cleans up each site's HT
 | Site | Platform | Processor |
 |---|---|---|
 | [Flaming Hydra](https://flaminghydra.com) | Ghost | `flaminghydra` |
+| [Welcome to Hell World](https://www.welcometohellworld.com) | Ghost | `hellworld` |
 | Any other Ghost site | Ghost | `generic` |
 
 More are on the way: more platforms, more site-specific processors and, eventually, a web UI for building books without the command line.
@@ -165,6 +166,8 @@ Footnotes in posts (Ghost's Markdown card) become notes at the end of their chap
 Embedded media become **link cards**: a YouTube or Vimeo video, a Spotify episode, an audio or video file, a bookmarked page, or a post from X, TikTok or Bluesky appears as a small card with a label ("Video", "Audio", "Link", "Post on X", …), the linked title or the post's text, a source line, and a thumbnail for videos and bookmarks. A reader taps through to watch or listen online. Thumbnails are decorative, so they never need alt text. Forms and polls (Tally) can't work in a book and are left out; anything not recognised becomes a generic "Embedded content" card; both are listed after the build.
 
 Links in posts are checked: a link to a section of the post that doesn't exist (e.g. a digest's contents pointing at a renamed section) is pointed at the section it meant, a mistyped address (stray spaces or quotes, a missing `https://`) is fixed, and a link that can't be repaired loses the link but keeps its words. Every changed link is listed after the build with its old and new address, so you can check the repairs.
+
+Welcome to Hell World books lose every button (each sells a subscription or a book) and the lines that only sell ("Subscribe now", "Get 20% off for 1 year", "Subscribe to read the rest"), and each is listed after the build. A "read the rest" line stays when it links elsewhere and little follows it, because that post really is shortened. Longer sentences asking readers to subscribe, "Read the rest here" links and book notices stay. Tweets imported without their text show the writer, the date and a link.
 
 Website calls-to-action are taken out of Flaming Hydra books: subscribe banners at the end of posts, and subscribe, support, share and shop buttons. Subscribe or sign-up links inside sentences keep their words but lose the (dead) link, and each such paragraph, plus any promotional image kept because it's mid-post, is listed after the build for review.
 

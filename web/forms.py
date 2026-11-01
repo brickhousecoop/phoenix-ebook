@@ -35,8 +35,25 @@ UPLOAD_FIELDS = {
 }
 CONTENT_FIELDS = tuple(UPLOAD_FIELDS)[1:]
 
-PLATFORM = "ghost"
-SITE_URL = "https://flaminghydra.ghost.io"
+
+
+@dataclass(frozen=True)
+class Blog:
+    """A blog the website builds from. A post's full address says which blog it's on."""
+
+    name: str
+    platform: str
+    url: str  # where its platform's API is
+    hosts: tuple[str, ...]  # exact hosts its post addresses may use; the public one first
+
+
+BLOGS = (
+    Blog("Flaming Hydra", "ghost", "https://flaminghydra.ghost.io",
+         ("flaminghydra.com", "www.flaminghydra.com", "flaminghydra.ghost.io")),
+    Blog("Welcome to Hell World", "ghost", "https://hellworld.ghost.io",
+         ("www.welcometohellworld.com", "welcometohellworld.com", "hellworld.ghost.io")),
+)
+
 MAX_POSTS = 100  # see ADR 0002: sized from measured build time against Vercel's function limit
 MAX_COVER_BYTES = 4_500_000  # Vercel functions can't return more than 4.5 MB (ADR 0002)
 
@@ -122,6 +139,7 @@ def _parse_kv_lines(text: str) -> dict[str, str]:
 
 
 ALT_KINDS = ("image-missing-alt", "image-suspicious-alt")
+MAX_OPEN_ALT_BOXES = 20  # with more in a book, the results page collapses each post's boxes
 
 
 @dataclass
@@ -161,41 +179,67 @@ def merge_alt_fixes(alt_text: str, fixes: list[AltFix]) -> str:
     return "\n".join(lines)
 
 
-def _check_post_list(raw_text: str) -> tuple[list[str], list[FormError]]:
-    """Resolve addresses to slugs, in order; report unrecognised addresses, duplicates
-    (with line numbers) and more than ``MAX_POSTS`` posts."""
+def _blog_of(address: str) -> tuple[Blog | None, str | None, bool]:
+    """The blog and slug ``address`` names, and whether it's a full post address at all."""
+    for platform in dict.fromkeys(blog.platform for blog in BLOGS):
+        if parsed := get_platform(platform).parse_address(address):
+            host, slug = parsed
+            for blog in BLOGS:
+                if blog.platform == platform and host in blog.hosts:
+                    return blog, slug, True
+            return None, None, True
+    return None, None, False
+
+
+def _line_numbers(numbers: list[int]) -> str:
+    return ("line " if len(numbers) == 1 else "lines ") + ", ".join(map(str, numbers))
+
+
+def _check_post_list(raw_text: str) -> tuple[Blog | None, list[str], list[FormError]]:
+    """Resolve full addresses to their blog and slugs, in order; report what isn't a full address,
+    unknown sites, addresses from more than one blog, duplicates (with line numbers) and more
+    than ``MAX_POSTS`` posts. The blog is None unless exactly one was found."""
     lines = parse_post_addresses(raw_text)
     if not lines:
-        return [], [FormError("posts", "add at least one post address")]
+        return None, [], [FormError("posts", "add at least one post address")]
 
-    platform = get_platform(PLATFORM)
     errors: list[FormError] = []
     seen: dict[str, int] = {}
     slugs: list[str] = []
-    unrecognised: list[int] = []
+    not_addresses: list[int] = []
+    other_sites: list[int] = []
     duplicates: list[str] = []
+    lines_by_blog: dict[Blog, list[int]] = {}
 
     for lineno, address in lines:
-        slug = platform.parse_address(address)
-        if slug is None:
-            unrecognised.append(lineno)
+        blog, slug, is_address = _blog_of(address)
+        if blog is None:
+            (other_sites if is_address else not_addresses).append(lineno)
             continue
+        lines_by_blog.setdefault(blog, []).append(lineno)
         if slug in seen:
             duplicates.append(f"line {lineno} repeats line {seen[slug]} ({slug!r})")
             continue
         seen[slug] = lineno
         slugs.append(slug)
 
-    if unrecognised:
-        where = ", ".join(f"line {n}" for n in unrecognised)
-        errors.append(FormError("posts", f"not a flaminghydra.com (or flaminghydra.ghost.io) address or a bare "
-                                         f"slug: {where}"))
+    if not_addresses:
+        errors.append(FormError("posts", f"not a full post address: {_line_numbers(not_addresses)}. Paste the "
+                                         f"whole address, like https://{BLOGS[0].hosts[0]}/a-post/"))
+    if other_sites:
+        names = " and ".join(blog.name for blog in BLOGS)
+        errors.append(FormError("posts", f"from another site: {_line_numbers(other_sites)}. This website "
+                                         f"only builds from {names}"))
+    if len(lines_by_blog) > 1:
+        where = "; ".join(f"{blog.name}: {_line_numbers(numbers)}" for blog, numbers in lines_by_blog.items())
+        errors.append(FormError("posts", f"a book comes from one blog, but these addresses are from more than "
+                                         f"one ({where})"))
     if duplicates:
         errors.append(FormError("posts", f"duplicate posts: {'; '.join(duplicates)}"))
     if len(slugs) > MAX_POSTS:
         errors.append(FormError("posts", f"{len(slugs)} posts given; this website builds at most {MAX_POSTS} "
                                          "at a time"))
-    return slugs, errors
+    return next(iter(lines_by_blog)) if len(lines_by_blog) == 1 else None, slugs, errors
 
 
 def _check_cover_bytes(data: bytes) -> list[FormError]:
@@ -236,19 +280,20 @@ def _int_field(raw: RawForm, field: str, default: int) -> tuple[int, FormError |
         return default, FormError(field, f"{field.replace('_', ' ')}: {text!r} isn't a whole number")
 
 
-def _build_spec(raw: RawForm, slugs: list[str]) -> tuple[BookSpec, list[FormError]]:
+def _build_spec(raw: RawForm, slugs: list[str], blog: Blog | None) -> tuple[BookSpec, list[FormError]]:
     """Build the ``BookSpec`` plus any errors ``validate_spec`` can't catch (that
-    function handles series/issn/isbn consistency and content-file existence)."""
+    function handles series/issn/isbn consistency and content-file existence).
+    With no ``blog`` (the post list has errors) it has no source."""
     errors: list[FormError] = []
 
     image_max_width, mw_error = _int_field(raw, "image_max_width", DEFAULT_MAX_WIDTH)
     image_quality, iq_error = _int_field(raw, "image_quality", DEFAULT_QUALITY)
     errors.extend(e for e in (mw_error, iq_error) if e)
 
-    source = SourceSpec(
-        platform=PLATFORM,
-        url=SITE_URL,
-        processor=select_processor(PLATFORM, extract_domain(SITE_URL), get_platform(PLATFORM).default_processor),
+    source = blog and SourceSpec(
+        platform=blog.platform,
+        url=blog.url,
+        processor=select_processor(blog.platform, extract_domain(blog.url), get_platform(blog.platform).default_processor),
         slugs=slugs,
     )
     spec = BookSpec(
@@ -290,8 +335,8 @@ def check_submission(raw: RawForm, session: requests.Session | None = None,
     the posts, so a clean result carries them, ready to build.
     """
     posts: list[Post] = []
-    slugs, post_errors = _check_post_list(raw.posts)
-    spec, spec_errors = _build_spec(raw, slugs)
+    blog, slugs, post_errors = _check_post_list(raw.posts)
+    spec, spec_errors = _build_spec(raw, slugs, blog)
     errors = post_errors + spec_errors
 
     if "cover" in raw.files:
