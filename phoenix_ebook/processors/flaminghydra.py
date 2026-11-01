@@ -74,6 +74,9 @@ _SUBSCRIBE = re.compile(r"^(?:https?://(?:www\.)?flaminghydra\.(?:com|ghost\.io)
 _SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
                     r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
 _SHOP = re.compile(r"^https?://shop\.flaminghydra\.com\b", re.I)
+# Fundraising campaigns (#39): the blog's Kickstarter projects, and The Phoenix's sign-up form.
+_CAMPAIGN_LINK = re.compile(r"^https?://(?:www\.)?(?:kickstarter\.com/projects/thebrickhouse/|tally\.so/r/7RyjGA\b)", re.I)
+_CAMPAIGN_HEADING = re.compile(r"\bkickstarter\b|\bthe phoenix\b", re.I)
 _CTA_HEADING = re.compile(r"free post|subscri|support our serpent|support us", re.I)
 
 
@@ -110,22 +113,44 @@ CLOSING_APPEAL_MAX_WORDS = 150  # longer final sections are left alone: more lik
 
 
 def _remove_closing_appeal(soup) -> None:
-    """Drop a post's final section, after its last <hr>, when it asks readers to subscribe or
-    donate (#30): "If you enjoyed this free post, subscribe…". A marker is left for the report."""
+    """Drop a post's final section, after its last <hr>, when it asks readers to subscribe or donate
+    (#30: "If you enjoyed this free post, subscribe…") or promotes a campaign (#39: "DID WE TELL YOU
+    ABOUT OUR KICKSTARTER?"), and any such section that leaves last. Markers are left for the report."""
+    markers = []
+    while marker := _remove_final_appeal(soup):
+        markers.append(marker)
+    soup.extend(markers)
+
+
+def _remove_final_appeal(soup):
     parts = blocks(soup)
     rules = [i for i, block in enumerate(parts) if getattr(block, "name", None) == "hr"]
     if not rules:
-        return
-    section = parts[rules[-1] + 1:]
-    links = [a["href"] for block in section if hasattr(block, "find_all")
-             for a in block.find_all("a", href=True) if _SUBSCRIBE.match(a["href"])]
+        return None
+    section = [block for block in parts[rules[-1] + 1:] if hasattr(block, "find_all")]
+    hrefs = [a["href"] for block in section for a in block.find_all("a", href=True)]
+    links = [href for href in hrefs if _SUBSCRIBE.match(href)] + [href for href in hrefs if _CAMPAIGN_LINK.match(href)]
     text = " ".join(" ".join(block.get_text(" ", strip=True).split()) for block in section).strip()
-    if not links or len(text.split()) > CLOSING_APPEAL_MAX_WORDS:
-        return
+    if not (any(_SUBSCRIBE.match(href) for href in hrefs) or _is_campaign_promo(section)) \
+            or len(text.split()) > CLOSING_APPEAL_MAX_WORDS:
+        return None
     for block in [parts[rules[-1]], *section]:
         block.extract()
     drop_dangling_end(soup)
-    soup.append(soup.new_tag("span", attrs={CALL_TO_ACTION_REMOVED: text, CALL_TO_ACTION_REMOVED_URL: links[0]}))
+    attrs = {CALL_TO_ACTION_REMOVED: text}
+    if links:
+        attrs[CALL_TO_ACTION_REMOVED_URL] = links[0]
+    return soup.new_tag("span", attrs=attrs)
+
+
+def _is_campaign_promo(section: list) -> bool:
+    """A section about a campaign, with no writing mixed in: every paragraph links to the campaign."""
+    def has_link(block) -> bool:
+        return any(_CAMPAIGN_LINK.match(a["href"]) for a in block.find_all("a", href=True))
+
+    named = any(block.name in ("h2", "h3", "h4") and _CAMPAIGN_HEADING.search(block.get_text()) for block in section)
+    paragraphs = [block for block in section if block.name == "p" and block.get_text(strip=True)]
+    return (named or any(has_link(block) for block in section)) and all(has_link(p) for p in paragraphs)
 
 
 def _is_subscribe_banner(figure) -> bool:

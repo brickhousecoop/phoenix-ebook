@@ -14,6 +14,7 @@ from conftest import assert_valid_epub, ok, png, post
 from phoenix_ebook.models import Post
 from phoenix_ebook.platforms.ghost import GhostPlatform
 from phoenix_ebook.processors.base import get_processor
+from phoenix_ebook.processors import flaminghydra as fh
 
 SUB = "https://flaminghydra.com/subscribe"
 LOGO = "https://storage.ghost.io/c/x/content/images/2025/07/High-Res-FH-Logo-Light-BG.gif"
@@ -260,3 +261,66 @@ def test_sentence_mentioning_the_comments_is_kept():
 def test_long_paragraph_after_a_rule_mentioning_the_comments_is_kept():
     html = LAST + "<hr/><p>" + " ".join(["word"] * 40) + ' <a href="' + COMMENTS + '">comments</a></p>'
     assert processed(html) == html
+
+
+# ---------------------------------------------------------------- campaign promos (#39)
+
+KICKSTARTER = "https://www.kickstarter.com/projects/thebrickhouse/return-of-the-human-internet"
+BANNER = f'<figure class="kg-card kg-image-card"><a href="{KICKSTARTER}"><img src="{LOGO}" alt=""></a></figure>'
+LINKED_PROMO = (f'<hr>{BANNER}<h3><a href="{KICKSTARTER}">DID WE TELL YOU ABOUT OUR KICKSTARTER?</a></h3>')
+HEADING_PROMO = ('<hr><h3>COMING SOON TO KICKSTARTER FLAMING HYDRA PRESENTS: THE PHOENIX</h3>'
+                 f'<figure class="kg-card kg-image-card"><img src="{LOGO}" alt=""></figure>')
+FORM_PROMO = ('<hr><h3>RISING SOON</h3><p>We have been at work on new projects. '
+              '<a href="https://tally.so/r/7RyjGA">Join the list</a>.</p>')
+
+
+def visible(html: str) -> str:
+    return BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
+
+
+@pytest.mark.parametrize("promo", [LINKED_PROMO, HEADING_PROMO, FORM_PROMO])
+def test_campaign_promo_in_the_final_section_is_removed(promo):
+    out = processed(LAST + promo)
+    assert visible(out) == "The essay's last real paragraph."
+    assert not re.search("<hr|<img", out)
+
+
+def test_campaign_promo_above_a_closing_appeal_is_removed_too():
+    out = processed(LAST + LINKED_PROMO + CLOSING_APPEALS[0])
+    assert visible(out) == "The essay's last real paragraph." and "<hr" not in out
+
+
+def test_campaign_promo_in_a_long_final_section_stays():
+    long_section = "<hr><h3>Our Kickstarter, a history</h3><p>" + "word " * (fh.CLOSING_APPEAL_MAX_WORDS + 1) + "</p>"
+    assert "a history" in processed(LAST + long_section)
+
+
+def test_kickstarter_mention_outside_the_final_section_stays():
+    html = (f'<p>We raised it all on <a href="{KICKSTARTER}">Kickstarter</a> last year.</p><hr><h3>Kickstarter</h3>'
+            '<p>More writing.</p><hr><p>The end.</p>')
+    out = processed(html)
+    assert f'<a href="{KICKSTARTER}">Kickstarter</a>' in out and "<h3>Kickstarter</h3>" in out and "The end." in out
+
+
+def test_someone_elses_kickstarter_in_a_final_paragraph_stays():
+    html = LAST + '<hr><p>Back <a href="https://www.kickstarter.com/projects/someone/else">this comic</a>!</p>'
+    assert "this comic" in processed(html)
+
+
+def test_final_section_mixing_writing_with_a_campaign_line_stays():
+    html = (LAST + "<hr><h3>THANK YOU</h3><p>At The Racket, a Hydra has an excellent post about the campaign trail.</p>"
+            f'<p>Four days left in <a href="{KICKSTARTER}">the fundraiser</a>!</p>')
+    assert "excellent post" in processed(html)
+
+
+def test_removed_campaign_promo_is_reported(build_book):
+    book = build_book(post(GhostPlatform().normalize_html(LAST + LINKED_PROMO)), processor="flaminghydra")
+    (cta,) = [p for p in book.result.problems if p.kind == "call-to-action"]
+    assert cta.detail == 'closing appeal removed: "DID WE TELL YOU ABOUT OUR KICKSTARTER?"'
+    assert cta.url == KICKSTARTER
+
+
+def test_removed_heading_only_promo_is_reported_without_a_link(build_book):
+    book = build_book(post(GhostPlatform().normalize_html(LAST + HEADING_PROMO)), processor="flaminghydra")
+    (cta,) = [p for p in book.result.problems if p.kind == "call-to-action"]
+    assert "COMING SOON TO KICKSTARTER" in cta.detail and cta.url is None
