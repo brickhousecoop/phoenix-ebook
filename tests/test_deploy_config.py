@@ -72,3 +72,10 @@ def test_checks_pass_when_the_apps_own_folder_is_read_only(monkeypatch, tmp_path
     monkeypatch.chdir(read_only)
     result = check_submission(RawForm(posts="anything"))  # no key stored: fails, but not on the output folder
     assert not any("can't write" in e.message for e in result.errors), result.errors
+
+
+def test_vercel_package_is_held_below_the_version_without_upload_file():
+    """Deploys install the newest version allowed, and vercel 0.12 removed the upload_file we call."""
+    project = tomllib.loads((REPO / "pyproject.toml").read_text())
+    assert "vercel>=0.11,<0.12" in project["project"]["dependencies"]
+    assert "vercel>=0.11,<0.12" in (REPO / "requirements-web.txt").read_text()

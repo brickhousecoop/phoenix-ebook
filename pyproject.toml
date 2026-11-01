@@ -17,7 +17,7 @@ dependencies = [
     "uvicorn>=0.32",
     "jinja2>=3.1",
     "python-multipart>=0.0.12",
-    "vercel>=0.11",
+    "vercel>=0.11,<0.12",  # 0.12 moved Blob out and has no upload_file
     "argon2-cffi>=23.1",
 ]
 
