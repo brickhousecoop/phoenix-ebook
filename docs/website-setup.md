@@ -19,6 +19,7 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 | Import the repository, settings, Blob store, environment variables, protection, website users | any team **Member** |
 | Let Vercel's GitHub app see the repository (only if it isn't in Vercel's list) | a GitHub organisation **Owner** |
 | Spend Management cap | a Vercel team **Owner** |
+| The store: Neon account, import, backups | whoever runs the site, on their own computer |
 
 ## Setting it up
 
@@ -42,7 +43,7 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 
    Then check **Settings → Environment Variables** for **`BLOB_READ_WRITE_TOKEN`**. The site needs this exact variable (Vercel's Python SDK reads nothing else). Without it, every build stops with "This site isn't connected to its Blob store".
 
-5. **Add the Ghost key.** **Settings → Environment Variables → Add**:
+5. **Add the Ghost key.** If the site has [the store](#the-store), the key goes there and this step is skipped. Without it, **Settings → Environment Variables → Add**:
    - **Name:** `PHOENIX_SECRET_GHOST_FLAMINGHYDRA_GHOST_IO`;
    - **Value:** the Flaming Hydra Ghost **Admin API key** (`id:secret`, from Ghost Admin → Settings → Integrations), the same key the command line uses;
    - **Environments:** **Production** and **Preview** (not Development);
@@ -50,15 +51,71 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 
    Each blog has its own key, added the same way: `PHOENIX_SECRET_GHOST_HELLWORLD_GHOST_IO` for Welcome to Hell World (from its own Ghost Admin). The blogs the website builds from are listed in `BLOGS` in `web/forms.py`.
 
-6. **Set up the users**, as in [Users](#users) below.
+6. **Set up the users**, as in [the store](#the-store) or, without one, [Users](#users) below.
 
 7. **Redeploy**, so the deployment picks up the variables: **Deployments → the latest → ⋯ → Redeploy**. Then open the address in a private window: you should get the site's sign-in page. Sign in, build a small book, and download it.
 
 8. **Ask a Vercel Owner to set a Spend Management cap** (team **Settings → Billing → Spend Management**). Builds are billed by usage and there's no limit on how many people run. *(Not done yet.)*
 
+## The store
+
+Blogs, their keys, users and their access can live in one Postgres database ([ADR 0004](adr/0004-one-store-postgres-read-only-website.md)), so changing them needs no redeploy. With `PHOENIX_STORE_URL` set, the store is the only source, and the old variables below are ignored. Without it, the site uses those variables, or on your own computer `~/.phoenix_users.json`, your stored keys and `BLOGS` in `web/forms.py`.
+
+| Variable | Where | What |
+|---|---|---|
+| `PHOENIX_STORE_URL` | Vercel, Sensitive | The website's **read-only** connection |
+| `PHOENIX_STORE_MASTER_KEY` | Vercel, Sensitive, and your password manager | Decrypts blog keys. If it's lost, every blog's key has to be entered again |
+| `PHOENIX_STORE_ADMIN_URL` | **Only your own computer, never Vercel or the sandbox** | The full-access connection, for the scripts. Asked for if it isn't set |
+
+### Setting it up
+
+1. **Create the database.** Sign up at <https://neon.com> on the Free plan, which needs no card. Create a project in the region closest to the site's Vercel region (Vercel: **Settings → Functions**). Connect it by hand, not through the Vercel Marketplace, which adds a full-access variable to the project and offers a database branch per preview.
+
+2. **Copy the full-access connection.** On Neon's project page, press **Connect**, with **Connection pooling** on (the host name has `-pooler` in it). The read-only logins will use the same route.
+
+3. **Load it,** on your own computer, in the repository, with the website's requirements installed (`uv pip install -r requirements-web.txt`):
+
+   ```bash
+   .venv/bin/python scripts/store_admin.py import
+   ```
+
+   It asks for the connection, without showing what you type. It reads `~/.phoenix_users.json` and the keys wherever this computer keeps them; `--users-file` and `--keys-file` name other files. The blogs come from `BLOGS` in the code, and current users get every blog. If anything is missing it says what, and writes nothing.
+
+   It **shows these only once**, so keep the output until they're stored:
+   - **the master key:** put it in your password manager;
+   - **the website's read-only connection;**
+   - **a second read-only connection,** for checking the store from the development sandbox. Store it from your own shell in the sandbox, never in a chat. It can be deleted at any time without touching the site (in Neon's SQL editor: `DROP OWNED BY phoenix_check; DROP ROLE phoenix_check;`).
+
+4. **Try it on a preview.** Add `PHOENIX_STORE_URL` and `PHOENIX_STORE_MASTER_KEY` for **Preview only**, and redeploy a preview. Check you can sign in and build from each blog.
+
+5. **Connect production.** Add the same two for **Production** and redeploy, leaving `PHOENIX_USERS` and the `PHOENIX_SECRET_GHOST_*` variables in place. **The way back:** remove `PHOENIX_STORE_URL` from Production and redeploy, and the site returns to the old variables.
+
+6. **Delete the old variables** after a few days of normal use, redeploy, and build once more.
+
+### Changing things
+
+Until #40 adds proper commands, edit your lists and run the import again, with `PHOENIX_STORE_MASTER_KEY` set in your shell. It makes the store match its inputs, **removing whatever they don't list**, and it takes effect on the next request, with no redeploy. It runs in one transaction: all of it happens, or none. `--new-login-passwords` replaces the read-only passwords, if you've lost them, and shows the new ones; the website's then has to change in Vercel.
+
+### Backups
+
+Neon's Free plan keeps 6 hours of history and has no scheduled backups, so export after each change:
+
+```bash
+.venv/bin/python scripts/store_admin.py export                    # a dated file in ~/.phoenix_store_backups/
+.venv/bin/python scripts/store_admin.py import --from-export FILE # restores it
+```
+
+The export can use either connection. It's readable only by you, and the blog keys stay encrypted in it, but it holds emails and password hashes, so **never put it in the repository or the public Blob store**. A restore makes the store match the file exactly, and needs the same master key as when the file was made.
+
+### When it goes wrong
+
+- **"Try again in a minute":** the site couldn't read the store. Check Neon's project page, and the site's logs for `store: couldn't read it`. On the Free plan, using up the 100 compute hours or 5 GB of data transfer stops the database until next month or an upgrade, with no data lost. A wrong `PHOENIX_STORE_URL` looks the same.
+- **"has PHOENIX_STORE_URL but no PHOENIX_STORE_MASTER_KEY":** add the master key to Vercel for that environment, and redeploy.
+- **"was encrypted with master key …":** `PHOENIX_STORE_MASTER_KEY` isn't the one that encrypted the keys. Restore it from your password manager.
+
 ## Users
 
-The site's users are an email address and a password each. The passwords are generated, never chosen, and only their argon2id hashes are kept, in two environment variables (**Settings → Environment Variables**, both **Sensitive**, for **Production** and **Preview**):
+Without [the store](#the-store), the site's users are an email address and a password each. The passwords are generated, never chosen, and only their argon2id hashes are kept, in two environment variables (**Settings → Environment Variables**, both **Sensitive**, for **Production** and **Preview**):
 
 - **`PHOENIX_USERS`**: the list of users, as JSON (`{"ana@example.org": "$argon2id$…"}`). Without it, or if it isn't valid JSON, nobody can sign in, and the sign-in page says so.
 - **`PHOENIX_SESSION_SECRET`**: signs the cookie that keeps people signed in for 30 days. Any long random value, e.g. from `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Changing it signs everyone out. Without it on Vercel, nobody can sign in.

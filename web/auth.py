@@ -1,10 +1,9 @@
 """Who may use the website: users, passwords and sign-in cookies (ADR 0003).
 
-Users are an email address and an argon2id password hash, kept as a JSON object
-in ``PHOENIX_USERS`` or, failing that, in ``~/.phoenix_users.json`` (maintained by
-``scripts/add_user.py``). With neither, nobody can sign in. The website reads
-users only through ``load_users()``, so moving them to a store later changes
-only that function.
+Users are an email address and an argon2id password hash. With ``PHOENIX_STORE_URL``
+set they're in the store (ADR 0004), and nothing else counts. Without it, they're a
+JSON object in ``PHOENIX_USERS`` or, failing that, in ``~/.phoenix_users.json``
+(maintained by ``scripts/add_user.py``). With none of these, nobody can sign in.
 """
 from __future__ import annotations
 
@@ -22,6 +21,8 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
 from phoenix_ebook.models import SourceSpec
+
+from web import store
 
 USERS_ENV = "PHOENIX_USERS"
 SECRET_ENV = "PHOENIX_SESSION_SECRET"
@@ -41,8 +42,11 @@ def normalize(email: str) -> str:
 
 
 def load_users() -> dict[str, str] | None:
-    """Email -> argon2id hash, from ``PHOENIX_USERS`` or else ``USERS_FILE``; None if neither
-    holds a valid list (logged), which means nobody can sign in."""
+    """Email -> argon2id hash, from the store if connected, else ``PHOENIX_USERS`` or else
+    ``USERS_FILE``; None if neither holds a valid list (logged), which means nobody can sign in.
+    A store that can't be read raises ``store.StoreUnavailable``: an outage is not "no such user"."""
+    if connected := store.active():
+        return {normalize(email): hashed for email, hashed in connected.users().items()}
     text, where = os.environ.get(USERS_ENV), USERS_ENV
     if text is None:
         if not USERS_FILE.is_file():
@@ -65,6 +69,8 @@ def hash_password(password: str) -> str:
 
 def setup_problem() -> str | None:
     """Why nobody can sign in right now, or None."""
+    if problem := store.setup_problem():
+        return problem
     if not load_users():
         return ("No users are set up, so nobody can sign in. Whoever runs the site: "
                 "see docs/website-setup.md, “Users”.")

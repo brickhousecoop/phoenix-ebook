@@ -83,3 +83,7 @@ _Avoid_: Stub page, dummy page
 **User**:
 Someone allowed to sign in to the website and build books.
 _Avoid_: Member (a paying reader of a site), editor (the book's credited compiler), account
+
+**Store**:
+The website's one database of blogs, their keys, users and their access.
+_Avoid_: Secret store (`SecretStore`, the library's key lookup, which is separate), Blob store (where finished books go)

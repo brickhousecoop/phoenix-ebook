@@ -24,9 +24,9 @@ from phoenix_ebook.epub_builder import PLACEHOLDER_TEXT
 from phoenix_ebook.models import Progress
 from phoenix_ebook.platforms.base import get_platform
 
-from web import auth, problems, storage
-from web.forms import (ALT_KINDS, BLOGS, CONTENT_FIELDS, MAX_OPEN_ALT_BOXES, MAX_POSTS, UPLOAD_FIELDS, CheckResult,
-                       RawForm, alt_fixes_from, merge_alt_fixes)
+from web import auth, problems, storage, store
+from web.forms import (ALT_KINDS, CONTENT_FIELDS, MAX_OPEN_ALT_BOXES, MAX_POSTS, UPLOAD_FIELDS, Blog, CheckResult,
+                       RawForm, alt_fixes_from, current_blogs, merge_alt_fixes)
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
@@ -42,7 +42,6 @@ SIGN_IN = "/sign-in"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 STREAM_TYPE = "application/x-ndjson"
-POST_EXAMPLES = " or ".join(f"<code>{blog.hosts[0]}/…</code>" for blog in BLOGS)
 # A rebuild sends 3 fields per alt-text box, and a 100-post book can have thousands of images.
 MAX_FORM_FIELDS = 30_000
 ADVANCED_FIELDS = {
@@ -52,7 +51,11 @@ ADVANCED_FIELDS = {
 }
 
 
-def _form_page(raw: RawForm, result: CheckResult, user: str) -> str:
+def _post_examples(blogs: tuple[Blog, ...]) -> str:
+    return " or ".join(f"<code>{blog.hosts[0]}/…</code>" for blog in blogs)
+
+
+def _form_page(raw: RawForm, result: CheckResult, user: str, blogs: tuple[Blog, ...]) -> str:
     return templates.get_template("index.html").render(
         user=user,
         raw=raw,
@@ -60,16 +63,16 @@ def _form_page(raw: RawForm, result: CheckResult, user: str) -> str:
         submitted=bool(result.errors),
         advanced_open=any(e.field in ADVANCED_FIELDS for e in result.errors),
         max_posts=MAX_POSTS,
-        blogs=BLOGS,
-        post_examples=POST_EXAMPLES,
+        blogs=blogs,
+        post_examples=_post_examples(blogs),
         placeholder_pages=PLACEHOLDER_TEXT,
     )
 
 
-def _outcome_page(raw: RawForm, outcome: Outcome, user: str) -> str:
+def _outcome_page(raw: RawForm, outcome: Outcome, user: str, blogs: tuple[Blog, ...]) -> str:
     raw.kept = outcome.kept
     if not outcome.built:
-        return _form_page(raw, outcome.check, user)
+        return _form_page(raw, outcome.check, user, blogs)
     spec = outcome.check.spec
     platform = get_platform(spec.source.platform)
     fixable = [p for p in outcome.problems if p.kind in ALT_KINDS]
@@ -93,8 +96,8 @@ def _outcome_page(raw: RawForm, outcome: Outcome, user: str) -> str:
         result=CheckResult(spec=None),
         advanced_open=False,
         max_posts=MAX_POSTS,
-        blogs=BLOGS,
-        post_examples=POST_EXAMPLES,
+        blogs=blogs,
+        post_examples=_post_examples(blogs),
         placeholder_pages=PLACEHOLDER_TEXT,
     )
 
@@ -104,21 +107,22 @@ def _announce(step: Progress) -> bool:
     return step.done in (1, step.total) or step.done % 10 == 0
 
 
-def _stream(raw: RawForm, user: str) -> Iterator[str]:
+def _stream(raw: RawForm, user: str, blogs: tuple[Blog, ...]) -> Iterator[str]:
     """Progress lines, then the final page, as newline-delimited JSON.
 
     The build runs in its own thread so a closed tab doesn't stop it: it
-    finishes and saves the book, which nobody then downloads.
+    finishes and saves the book, which nobody then downloads. ``blogs`` was read before the build
+    began, so its last page doesn't need the store, and a book that got built is never lost to an outage.
     """
     events: queue.Queue = queue.Queue()
 
     def work() -> None:
         try:
-            outcome = run(raw, lambda step: events.put(("progress", step)), user=user)
+            outcome = run(raw, lambda step: events.put(("progress", step)), user=user, blogs=blogs)
             _log_build(user, raw, outcome)
-            events.put(("page", _outcome_page(raw, outcome, user)))
+            events.put(("page", _outcome_page(raw, outcome, user, blogs)))
         except Exception:  # rendering failed; run() itself never raises
-            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]), user)))
+            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]), user, blogs)))
             raise
 
     threading.Thread(target=work, daemon=True).start()
@@ -146,6 +150,21 @@ def _sign_in_page(next_path: str = "/", error: str | None = None, status: int = 
         user=None, next=next_path, error=error, email=email, problem=auth.setup_problem()), status_code=status)
 
 
+def _try_again(request: Request) -> Response:
+    """The store can't be read: say so. Not a wrong password, and the sign-in cookie is left alone."""
+    page = templates.get_template("try_again.html").render(user=None, message=store.TRY_AGAIN)
+    headers = {"Retry-After": "60"}
+    if request.method == "POST" and STREAM_TYPE in request.headers.get("accept", ""):
+        return Response(json.dumps({"type": "page", "html": page}) + "\n", media_type=STREAM_TYPE, status_code=503,
+                        headers=headers)
+    return HTMLResponse(page, status_code=503, headers=headers)
+
+
+@app.exception_handler(store.StoreUnavailable)
+async def store_unavailable(request: Request, exc: store.StoreUnavailable) -> Response:
+    return _try_again(request)
+
+
 def _same_origin(request: Request) -> bool:
     """Whether a form was sent from this site's own pages: browsers name the sending page's
     site in ``Origin`` on every POST, and another site's page can't change it. Behind a proxy
@@ -168,7 +187,10 @@ async def require_sign_in(request: Request, call_next) -> Response:
         return PlainTextResponse("This form must be sent from the site's own pages.", status_code=403)
     if request.url.path == SIGN_IN:
         return await call_next(request)
-    user = auth.user_from_cookie(request.cookies.get(auth.COOKIE))
+    try:
+        user = auth.user_from_cookie(request.cookies.get(auth.COOKIE))
+    except store.StoreUnavailable:  # raised here, it wouldn't reach the app's exception handlers
+        return _try_again(request)
     if user is None:
         if request.method == "POST" and STREAM_TYPE in request.headers.get("accept", ""):
             # The page's script shows whatever page comes back: here, the sign-in page.
@@ -218,7 +240,7 @@ async def sign_out(request: Request) -> RedirectResponse:
 async def form(request: Request) -> HTMLResponse:
     # The server's date, which on Vercel is UTC; see #29.
     raw = RawForm(pub_date=date.today().isoformat())
-    return HTMLResponse(_form_page(raw, CheckResult(spec=None), request.state.user))
+    return HTMLResponse(_form_page(raw, CheckResult(spec=None), request.state.user, current_blogs()))
 
 
 @app.post("/")
@@ -246,11 +268,12 @@ async def submit(request: Request):
         sort_names=text("sort_names"), alt_text=merge_alt_fixes(text("alt_text"), alt_fixes_from(form)),
     )
     user = request.state.user
+    blogs = current_blogs()
     if STREAM_TYPE in request.headers.get("accept", ""):
-        return StreamingResponse(_stream(raw, user), media_type=STREAM_TYPE)
-    outcome = await run_in_threadpool(run, raw, user=user)
+        return StreamingResponse(_stream(raw, user, blogs), media_type=STREAM_TYPE)
+    outcome = await run_in_threadpool(run, raw, user=user, blogs=blogs)
     _log_build(user, raw, outcome)
-    return HTMLResponse(_outcome_page(raw, outcome, user))
+    return HTMLResponse(_outcome_page(raw, outcome, user, blogs))
 
 
 @app.get(storage.LOCAL_URL_PREFIX + "/{token}/{name}")

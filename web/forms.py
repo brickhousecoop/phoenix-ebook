@@ -22,6 +22,9 @@ from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import select_processor
 from phoenix_ebook.secrets import SecretStore, extract_domain
 
+from web import store
+from web.store import Blog
+
 # BookSpec field -> what the form calls it. The cover first, then the content pages in reading order.
 UPLOAD_FIELDS = {
     "cover": "Cover image",
@@ -35,24 +38,20 @@ UPLOAD_FIELDS = {
 }
 CONTENT_FIELDS = tuple(UPLOAD_FIELDS)[1:]
 
-
-
-@dataclass(frozen=True)
-class Blog:
-    """A blog the website builds from. A post's full address says which blog it's on."""
-
-    name: str
-    platform: str
-    url: str  # where its platform's API is
-    hosts: tuple[str, ...]  # exact hosts its post addresses may use; the public one first
-
-
+# The blogs when the site has no store (on your own computer, in tests). With one, its list is used.
 BLOGS = (
     Blog("Flaming Hydra", "ghost", "https://flaminghydra.ghost.io",
          ("flaminghydra.com", "www.flaminghydra.com", "flaminghydra.ghost.io")),
     Blog("Welcome to Hell World", "ghost", "https://hellworld.ghost.io",
          ("www.welcometohellworld.com", "welcometohellworld.com", "hellworld.ghost.io")),
 )
+
+
+def current_blogs() -> tuple[Blog, ...]:
+    """The blogs this site builds from right now. Raises ``store.StoreUnavailable`` in an outage."""
+    connected = store.active()
+    return connected.blogs() if connected else BLOGS
+
 
 MAX_POSTS = 100  # see ADR 0002: sized from measured build time against Vercel's function limit
 MAX_COVER_BYTES = 4_500_000  # Vercel functions can't return more than 4.5 MB (ADR 0002)
@@ -179,12 +178,12 @@ def merge_alt_fixes(alt_text: str, fixes: list[AltFix]) -> str:
     return "\n".join(lines)
 
 
-def _blog_of(address: str) -> tuple[Blog | None, str | None, bool]:
+def _blog_of(address: str, blogs: tuple[Blog, ...]) -> tuple[Blog | None, str | None, bool]:
     """The blog and slug ``address`` names, and whether it's a full post address at all."""
-    for platform in dict.fromkeys(blog.platform for blog in BLOGS):
+    for platform in dict.fromkeys(blog.platform for blog in blogs):
         if parsed := get_platform(platform).parse_address(address):
             host, slug = parsed
-            for blog in BLOGS:
+            for blog in blogs:
                 if blog.platform == platform and host in blog.hosts:
                     return blog, slug, True
             return None, None, True
@@ -195,13 +194,15 @@ def _line_numbers(numbers: list[int]) -> str:
     return ("line " if len(numbers) == 1 else "lines ") + ", ".join(map(str, numbers))
 
 
-def _check_post_list(raw_text: str) -> tuple[Blog | None, list[str], list[FormError]]:
+def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS) -> tuple[Blog | None, list[str], list[FormError]]:
     """Resolve full addresses to their blog and slugs, in order; report what isn't a full address,
     unknown sites, addresses from more than one blog, duplicates (with line numbers) and more
     than ``MAX_POSTS`` posts. The blog is None unless exactly one was found."""
     lines = parse_post_addresses(raw_text)
     if not lines:
         return None, [], [FormError("posts", "add at least one post address")]
+    if not blogs:
+        return None, [], [FormError("posts", "this website has no blogs set up yet. Ask whoever runs it")]
 
     errors: list[FormError] = []
     seen: dict[str, int] = {}
@@ -212,7 +213,7 @@ def _check_post_list(raw_text: str) -> tuple[Blog | None, list[str], list[FormEr
     lines_by_blog: dict[Blog, list[int]] = {}
 
     for lineno, address in lines:
-        blog, slug, is_address = _blog_of(address)
+        blog, slug, is_address = _blog_of(address, blogs)
         if blog is None:
             (other_sites if is_address else not_addresses).append(lineno)
             continue
@@ -225,9 +226,9 @@ def _check_post_list(raw_text: str) -> tuple[Blog | None, list[str], list[FormEr
 
     if not_addresses:
         errors.append(FormError("posts", f"not a full post address: {_line_numbers(not_addresses)}. Paste the "
-                                         f"whole address, like https://{BLOGS[0].hosts[0]}/a-post/"))
+                                         f"whole address, like https://{blogs[0].hosts[0]}/a-post/"))
     if other_sites:
-        names = " and ".join(blog.name for blog in BLOGS)
+        names = " and ".join(blog.name for blog in blogs)
         errors.append(FormError("posts", f"from another site: {_line_numbers(other_sites)}. This website "
                                          f"only builds from {names}"))
     if len(lines_by_blog) > 1:
@@ -326,16 +327,20 @@ def _build_spec(raw: RawForm, slugs: list[str], blog: Blog | None) -> tuple[Book
 
 
 def check_submission(raw: RawForm, session: requests.Session | None = None,
-                     progress: Callable[[Progress], None] | None = None) -> CheckResult:
+                     progress: Callable[[Progress], None] | None = None,
+                     blogs: tuple[Blog, ...] | None = None) -> CheckResult:
     """Build a ``BookSpec`` from ``raw`` and run every pre-build check.
 
     Every problem is reported together in one pass, except that the live
     "does every post exist" check only runs once the post list itself is
     clean (a bad address list makes fetching meaningless). That check fetches
-    the posts, so a clean result carries them, ready to build.
+    the posts, so a clean result carries them, ready to build. ``blogs`` defaults to
+    ``current_blogs()``. The store's only other read is the blog's key, here too, so a build
+    that has passed these checks doesn't need the store again. An outage raises
+    ``store.StoreUnavailable``.
     """
     posts: list[Post] = []
-    blog, slugs, post_errors = _check_post_list(raw.posts)
+    blog, slugs, post_errors = _check_post_list(raw.posts, current_blogs() if blogs is None else blogs)
     spec, spec_errors = _build_spec(raw, slugs, blog)
     errors = post_errors + spec_errors
 
@@ -355,7 +360,10 @@ def check_submission(raw: RawForm, session: requests.Session | None = None,
     if not post_errors:
         try:
             platform = get_platform(spec.source.platform)
-            secret = SecretStore().get(spec.source.platform, extract_domain(spec.source.url))
+            connected = store.active()
+            # The override means the old key variables are ignored once the store is connected.
+            secrets = SecretStore(override=store.blog_key(connected, blog) if connected else None)
+            secret = secrets.get(spec.source.platform, extract_domain(spec.source.url))
             posts = fetch_posts(spec.source, platform, secret, session or requests.Session(), progress)
         except PhoenixError as exc:
             errors.append(FormError(exc.field, str(exc)))

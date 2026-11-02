@@ -16,7 +16,9 @@ from phoenix_ebook.models import BuildProblem, Progress
 from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
+from web import store
 from web.auth import may_build
+from web.store import Blog
 from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, check_submission
 from web.storage import load_upload, new_folder, save_book, save_upload, setup_problem
 
@@ -53,12 +55,13 @@ def describe(step: Progress) -> str:
 
 
 def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
-        session: requests.Session | None = None, *, user: str) -> Outcome:
+        session: requests.Session | None = None, *, user: str, blogs: tuple[Blog, ...] | None = None) -> Outcome:
     """Check ``raw`` and, if it passes, build and store the book for ``user``.
 
     Never raises: a failure part-way ends with its message on the form, which
     is refilled from ``raw``. Uploads (new, or kept from the last build) live in
     a temporary folder for the whole run, deleted at the end however it ends.
+    A store outage during the checks ends the same way; after them, the build doesn't need the store.
     """
     if problem := setup_problem():
         return Outcome(CheckResult(spec=None, errors=[FormError(None, problem)]))
@@ -79,7 +82,7 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
                 path.write_bytes(data)
                 raw.paths[field_name] = str(path)
 
-            check = check_submission(raw, session, progress)
+            check = check_submission(raw, session, progress, blogs)
             if not check.ok:
                 # Keep the uploads that were fine, so the refilled form can offer them again.
                 failed = {e.field for e in check.errors}
@@ -89,6 +92,8 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
                 return Outcome(CheckResult(spec=None, errors=[FormError(
                     "posts", f"You can't build books from {check.spec.source.url}.")]))
             return _build_and_store(check, session, progress, raw.paths)
+    except store.StoreUnavailable:
+        return Outcome(CheckResult(spec=None, errors=[FormError(None, store.TRY_AGAIN)]))
     except PhoenixError as exc:
         return Outcome(CheckResult(spec=None, errors=[FormError(exc.field, str(exc))]))
     except Exception:

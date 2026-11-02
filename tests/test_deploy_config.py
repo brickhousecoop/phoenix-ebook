@@ -18,13 +18,13 @@ def _requirements(name: str) -> set[str]:
         if line.startswith("-r "):
             names |= _requirements(line[3:].strip())
         elif line:
-            names.add(re.split(r"[<>=!~ ]", line)[0].lower())
+            names.add(re.split(r"[<>=!~ \[]", line)[0].lower())
     return names
 
 
 def test_pyproject_lists_the_websites_requirements():
     project = tomllib.loads((REPO / "pyproject.toml").read_text())
-    listed = {re.split(r"[<>=!~ ]", dep)[0].lower() for dep in project["project"]["dependencies"]}
+    listed = {re.split(r"[<>=!~ \[]", dep)[0].lower() for dep in project["project"]["dependencies"]}
     assert listed == _requirements("requirements-web.txt")
     assert project["project"]["requires-python"] == ">=3.14"
     assert project["tool"]["vercel"]["entrypoint"] == "web.main:app"

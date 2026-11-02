@@ -16,7 +16,7 @@ from phoenix_ebook.platforms.ghost import GhostPlatform
 from phoenix_ebook.processors.base import get_processor
 from phoenix_ebook.secrets import env_var_name
 from web import main, problems, runs, storage
-from web.forms import RawForm
+from web.forms import BLOGS, RawForm
 
 SITE_URL = "https://flaminghydra.ghost.io"
 
@@ -105,7 +105,7 @@ def test_stream_with_form_errors_ends_on_the_refilled_form(monkeypatch):
 def test_closing_the_tab_doesnt_stop_the_build(monkeypatch, tmp_path):
     """The stream's reader going away (a closed tab) leaves the build running to the end."""
     wire(monkeypatch, {**post_route("a"), **post_route("b")})
-    events = main._stream(RawForm(posts="flaminghydra.com/a\nflaminghydra.com/b", title="Abandoned"), TEST_USER)
+    events = main._stream(RawForm(posts="flaminghydra.com/a\nflaminghydra.com/b", title="Abandoned"), TEST_USER, BLOGS)
     assert json.loads(next(events))["type"] == "progress"
     events.close()
     deadline = time.monotonic() + 10

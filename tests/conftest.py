@@ -7,6 +7,7 @@ import re
 import shutil
 import socket
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 
@@ -67,6 +68,9 @@ def no_stored_users(monkeypatch, tmp_path):
         return
     monkeypatch.setattr(auth, "USERS_FILE", tmp_path / "phoenix_users.json")
     monkeypatch.delenv(auth.SECRET_ENV, raising=False)
+    from web import store
+    monkeypatch.delenv(store.URL_ENV, raising=False)
+    monkeypatch.delenv(store.MASTER_KEY_ENV, raising=False)
     monkeypatch.setenv(auth.USERS_ENV, users_json())
 
 
@@ -80,6 +84,40 @@ def web_client(user: str | None = TEST_USER):
     if user:
         client.cookies.set(auth.COOKIE, auth.make_cookie(user))
     return client
+
+
+POSTGRES_IMAGE = "postgres:17-alpine"
+
+
+@pytest.fixture(scope="session")
+def postgres_server():
+    """The address of a throwaway Postgres on this machine, for the few tests that need the real
+    thing. ``PHOENIX_TEST_POSTGRES_URL`` names one; otherwise Docker runs one, if it has the image.
+    Nothing is downloaded and nothing leaves this machine; without either, those tests skip."""
+    if url := os.environ.get("PHOENIX_TEST_POSTGRES_URL"):
+        yield url
+        return
+    docker = shutil.which("docker")
+    if not docker or subprocess.run([docker, "image", "inspect", POSTGRES_IMAGE], capture_output=True).returncode:
+        pytest.skip(f"no Postgres: run `docker pull {POSTGRES_IMAGE}` or set PHOENIX_TEST_POSTGRES_URL")
+    started = subprocess.run(
+        [docker, "run", "-d", "--rm", "-e", "POSTGRES_PASSWORD=test", "-p", "127.0.0.1::5432", POSTGRES_IMAGE],
+        capture_output=True, text=True)
+    if started.returncode:
+        pytest.skip(f"Docker couldn't start Postgres: {started.stderr.strip()}")
+    container = started.stdout.strip()
+    try:
+        port = subprocess.run([docker, "port", container, "5432/tcp"], capture_output=True,
+                              text=True).stdout.split(":")[-1].strip()
+        # Over TCP: while it first sets itself up, Postgres only listens on its local socket.
+        deadline = time.monotonic() + 60
+        while subprocess.run([docker, "exec", container, "pg_isready", "-h", "127.0.0.1"],
+                             capture_output=True).returncode:
+            if time.monotonic() > deadline:
+                pytest.skip("Docker's Postgres didn't become ready")
+        yield f"postgresql://postgres:test@127.0.0.1:{port}/postgres"
+    finally:
+        subprocess.run([docker, "stop", "-t", "0", container], capture_output=True)
 
 
 @pytest.fixture(autouse=True)
