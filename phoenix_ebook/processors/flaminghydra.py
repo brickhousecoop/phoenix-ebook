@@ -5,19 +5,19 @@ import re
 
 from bs4 import BeautifulSoup
 
-from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
-                                     CALL_TO_ACTION_REMOVED_URL, FEATURE_IMAGE, mark_call_to_action)
+from phoenix_ebook.canonical import CALL_TO_ACTION_BANNER, FEATURE_IMAGE
 
 from phoenix_ebook.models import Post
-from phoenix_ebook.processors.base import (HtmlProcessor, blocks, drop_dangling_end, is_filler, previous_block,
-                                            register_processor)
+from phoenix_ebook.processors.base import HtmlProcessor, register_processor
+from phoenix_ebook.processors.rules import (CLOSING_APPEAL_MAX_WORDS, SiteRules, blocks,  # noqa: F401 — tests read the limit
+                                            drop_dangling_end, is_filler, previous_block, remove_buttons,
+                                            remove_final_sections, remove_sales_lines, unlink_sales_links)
 
 
 @register_processor
 class FlamingHydraProcessor(HtmlProcessor):
-    """Flaming Hydra: drops the comments footer and website calls-to-action (trailing
-    subscribe banners; subscribe, share and shop buttons; subscribe links are unwrapped),
-    turns "by …" headings into byline paragraphs (dropping one that repeats the chapter
+    """Flaming Hydra: drops the comments footer and trailing subscribe banners, applies its
+    rules (``sites/flaminghydra.toml``), turns "by …" headings into byline paragraphs (dropping one that repeats the chapter
     header's), and labels contents entries "Title — Author"."""
 
     name = "flaminghydra"
@@ -32,10 +32,13 @@ class FlamingHydraProcessor(HtmlProcessor):
         joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
         return f"{post.title} — {joined}"
 
-    def clean(self, soup: BeautifulSoup, post: Post) -> None:
-        super().clean(soup, post)
+    def apply_rules(self, soup: BeautifulSoup, post: Post) -> None:
         _remove_comments_invitations(soup)
-        _remove_calls_to_action(soup)
+        remove_buttons(soup, self.rules, report=False)  # buttons were never reported here (#20)
+        _remove_trailing_banners(soup, self.rules)
+        remove_final_sections(soup, self.rules, heading=_CAMPAIGN_HEADING)
+        unlink_sales_links(soup, self.rules)
+        remove_sales_lines(soup, self.rules)
         _convert_bylines(soup, post)
 
 
@@ -68,27 +71,14 @@ def _remove_comments_invitations(soup) -> None:
         drop_dangling_end(soup)
 
 
-# Website calls-to-action (#20). A book can't subscribe, share or shop.
-_SUBSCRIBE = re.compile(r"^(?:https?://(?:www\.)?flaminghydra\.(?:com|ghost\.io))?/(?:subscribe|signup|membership|donate)\b",
-                        re.I)
-_SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
-                    r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
-_SHOP = re.compile(r"^https?://shop\.flaminghydra\.com\b", re.I)
-# Fundraising campaigns (#39): the blog's Kickstarter projects, and The Phoenix's sign-up form.
-_CAMPAIGN_LINK = re.compile(r"^https?://(?:www\.)?(?:kickstarter\.com/projects/thebrickhouse/|tally\.so/r/7RyjGA\b)", re.I)
+# Words that name a campaign or a call-to-action in a heading; addresses are in sites/flaminghydra.toml.
 _CAMPAIGN_HEADING = re.compile(r"\bkickstarter\b|\bthe phoenix\b", re.I)
 _CTA_HEADING = re.compile(r"free post|subscri|support our serpent|support us", re.I)
 
 
-def _remove_calls_to_action(soup) -> None:
-    # Buttons (canonical <p class="button">) that subscribe, share or shop: removed whole.
-    for button in soup.find_all("p", class_="button"):
-        link = button.find("a", href=True)
-        if link and any(p.match(link["href"]) for p in (_SUBSCRIBE, _SHARE, _SHOP)):
-            button.decompose()
-
-    # Subscribe banners: removed only at the end of the post; elsewhere they may be content.
-    banners = [fig for fig in soup.find_all("figure") if _is_subscribe_banner(fig)]
+def _remove_trailing_banners(soup, rules: SiteRules) -> None:
+    """Subscribe banners: removed only at the end of the post; elsewhere they may be content (#20)."""
+    banners = [fig for fig in soup.find_all("figure") if _is_subscribe_banner(fig, rules)]
     trailing = _trailing_banners(soup, banners)
     for figure in banners:
         if figure in trailing:
@@ -101,61 +91,10 @@ def _remove_calls_to_action(soup) -> None:
     if trailing:
         drop_dangling_end(soup)
 
-    _remove_closing_appeal(soup)
 
-    # Subscribe links inside text: keep the words, mark them for the report.
-    for link in soup.find_all("a", href=True):
-        if _SUBSCRIBE.match(link["href"]) and link.find("img") is None:
-            mark_call_to_action(soup, link)
-
-
-CLOSING_APPEAL_MAX_WORDS = 150  # longer final sections are left alone: more likely writing than an appeal
-
-
-def _remove_closing_appeal(soup) -> None:
-    """Drop a post's final section, after its last <hr>, when it asks readers to subscribe or donate
-    (#30: "If you enjoyed this free post, subscribe…") or promotes a campaign (#39: "DID WE TELL YOU
-    ABOUT OUR KICKSTARTER?"), and any such section that leaves last. Markers are left for the report."""
-    markers = []
-    while marker := _remove_final_appeal(soup):
-        markers.append(marker)
-    soup.extend(markers)
-
-
-def _remove_final_appeal(soup):
-    parts = blocks(soup)
-    rules = [i for i, block in enumerate(parts) if getattr(block, "name", None) == "hr"]
-    if not rules:
-        return None
-    section = [block for block in parts[rules[-1] + 1:] if hasattr(block, "find_all")]
-    hrefs = [a["href"] for block in section for a in block.find_all("a", href=True)]
-    links = [href for href in hrefs if _SUBSCRIBE.match(href)] + [href for href in hrefs if _CAMPAIGN_LINK.match(href)]
-    text = " ".join(" ".join(block.get_text(" ", strip=True).split()) for block in section).strip()
-    if not (any(_SUBSCRIBE.match(href) for href in hrefs) or _is_campaign_promo(section)) \
-            or len(text.split()) > CLOSING_APPEAL_MAX_WORDS:
-        return None
-    for block in [parts[rules[-1]], *section]:
-        block.extract()
-    drop_dangling_end(soup)
-    attrs = {CALL_TO_ACTION_REMOVED: text}
-    if links:
-        attrs[CALL_TO_ACTION_REMOVED_URL] = links[0]
-    return soup.new_tag("span", attrs=attrs)
-
-
-def _is_campaign_promo(section: list) -> bool:
-    """A section about a campaign, with no writing mixed in: every paragraph links to the campaign."""
-    def has_link(block) -> bool:
-        return any(_CAMPAIGN_LINK.match(a["href"]) for a in block.find_all("a", href=True))
-
-    named = any(block.name in ("h2", "h3", "h4") and _CAMPAIGN_HEADING.search(block.get_text()) for block in section)
-    paragraphs = [block for block in section if block.name == "p" and block.get_text(strip=True)]
-    return (named or any(has_link(block) for block in section)) and all(has_link(p) for p in paragraphs)
-
-
-def _is_subscribe_banner(figure) -> bool:
+def _is_subscribe_banner(figure, rules: SiteRules) -> bool:
     link = figure.find("a", href=True)
-    return bool(link and link.find("img") is not None and _SUBSCRIBE.match(link["href"]))
+    return bool(link and link.find("img") is not None and rules.is_sales_link(link["href"]))
 
 
 def _trailing_banners(soup, banners) -> set:

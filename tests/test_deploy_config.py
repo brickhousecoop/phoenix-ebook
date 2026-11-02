@@ -74,6 +74,11 @@ def test_checks_pass_when_the_apps_own_folder_is_read_only(monkeypatch, tmp_path
     assert not any("can't write" in e.message for e in result.errors), result.errors
 
 
+def test_the_deployed_site_includes_the_blog_rule_files():
+    assert "!/phoenix_ebook" in (REPO / ".vercelignore").read_text().splitlines()
+    assert (REPO / "phoenix_ebook" / "sites" / "_defaults.toml").is_file()
+
+
 def test_vercel_package_is_held_below_the_version_without_upload_file():
     """Deploys install the newest version allowed, and vercel 0.12 removed the upload_file we call."""
     project = tomllib.loads((REPO / "pyproject.toml").read_text())

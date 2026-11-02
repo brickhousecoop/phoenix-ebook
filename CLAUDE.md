@@ -18,8 +18,10 @@ phoenix_ebook/
 │   ├── base.py                 # Platform ABC (+ normalize_html, canonical_image_url, default_processor) + registry
 │   └── ghost.py                # GhostPlatform (JWT + Admin API)
 ├── processors/
-│   ├── base.py                 # HtmlProcessor (generic web cleanup in clean()) + select_processor
-│   └── flaminghydra.py         # site-specific rules for flaminghydra
+│   ├── base.py                 # HtmlProcessor (generic web cleanup in clean(), then apply_rules()) + select_processor
+│   ├── rules.py                # shared cleanup rules, and reading the files in sites/
+│   └── flaminghydra.py         # flaminghydra's unusual logic (its lists are in sites/)
+├── sites/                      # what each blog removes, as data; _defaults.toml applies to every blog; a blog can be only a file
 ├── images.py                   # fetch_image() / validate_image() / optimize_image()
 ├── alt_text.py                 # alt text checks (missing/suspicious) and URL-keyed overrides
 ├── errors.py                   # PhoenixError + subclasses; explain_response() for HTTP bodies
@@ -36,7 +38,7 @@ tests/                          # offline pytest suite (fixtures in conftest.py)
 scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
 ```
 
-Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`; the canonical forms, e.g. notes, are in `docs/canonical-html.md`). Adding site quirks = new processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.
+Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`; the canonical forms, e.g. notes, are in `docs/canonical-html.md`). Adding a site's lists = a file in `phoenix_ebook/sites/`; adding unusual logic = a processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.
 
 ## Setup, usage, secrets
 
@@ -54,7 +56,7 @@ See `README.md` — it's the source of truth for setup, CLI/manifest usage, and 
 - Keep CLI flags back-compatible — the user has existing invocations.
 - User-fixable failures raise a `PhoenixError` subclass (`phoenix_ebook/errors.py`) whose message says what to do next; the CLI prints `error: …` (exit 1, `--debug` for the traceback). Anything else escaping is treated as a bug and shows a traceback.
 - `phoenix_ebook/styles/core.css` is a pinned, unmodified Standard Ebooks snapshot (a checksum test enforces it). Put style changes in `phoenix.css`; never set `font-family` (readers' fonts win). Style changes need a visual check: render pages (e.g. headless Chromium) and give the user a sample book to review.
-- When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import. Processor `clean()` overrides must call `super().clean()`.
+- When a new platform/processor is added, register it in its module's `__init__.py` so the registry picks it up on import. Processor `clean()` overrides must call `super().clean()`; a processor's own logic usually belongs in `apply_rules()`.
 - Document contracts, not mechanics: public API and extension points get docstrings; trivial helpers don't. Changes that alter how books come out get a CHANGELOG.md entry.
 
 ## Agent skills

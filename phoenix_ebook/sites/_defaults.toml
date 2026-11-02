@@ -1,0 +1,13 @@
+# Lines every blog removes, on any platform. A blog's own file adds to these, and its
+# keep_lines can turn one off. A phrase matches a whole line, ignoring capitals and final
+# punctuation; # is any number, * is any words.
+remove_lines = [
+    "subscribe",
+    "subscribe now",
+    "subscribe - *",
+    "get #% off *",
+    "#% off *",
+    "# day free trial",
+    "give a gift subscription",
+    "share",
+]

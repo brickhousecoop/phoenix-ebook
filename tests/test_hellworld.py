@@ -5,10 +5,10 @@ import pytest
 from bs4 import BeautifulSoup
 
 import phoenix_ebook.processors  # noqa: F401 — registers hellworld
-from conftest import assert_valid_epub, post
+from conftest import REPO, assert_valid_epub, post
 from phoenix_ebook.models import Post
 from phoenix_ebook.platforms.ghost import GhostPlatform
-from phoenix_ebook.processors.base import get_processor
+from phoenix_ebook.processors.base import get_processor, select_processor
 
 SITE = "https://www.welcometohellworld.com"
 BUTTON = '<div class="kg-card kg-button-card"><a href="{href}" class="kg-btn">{label}</a></div>'
@@ -126,3 +126,10 @@ def test_removals_are_reported_and_the_book_is_valid(build_book, tmp_path):
 def test_contents_entries_are_plain_titles():
     post_ = Post(slug="p", title="A Title", html="", authors=[])
     assert get_processor("hellworld").display_title(post_) == "A Title"
+
+
+def test_the_blog_is_only_a_file_and_is_chosen_from_its_hosts():
+    assert not (REPO / "phoenix_ebook" / "processors" / "hellworld.py").exists()
+    for host in ("hellworld.ghost.io", "www.welcometohellworld.com"):
+        assert select_processor("ghost", host, "generic") == "hellworld"
+

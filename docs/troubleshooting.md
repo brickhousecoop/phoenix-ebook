@@ -71,6 +71,11 @@ These slugs don't exist (all missing ones are listed at once). A slug is the las
 **`error: --foreword-file: … isn't a Word file (.docx)`**: the file ends in `.docx` but isn't one. It may be an old `.doc` file renamed: open it in Word and save it as `.docx`, or save it as plain text, Markdown or HTML instead.
 **`error: The Word file … couldn't be read`**: the `.docx` file is damaged or uses something the converter can't handle. Open it in Word, save it again as `.docx`, and retry; or save it as plain text.
 
+### Blog rules files
+
+**`site rules file NAME.toml …`**
+A file in `phoenix_ebook/sites/` has a mistake, and books from that blog can't be built until it's fixed; other blogs still build. The message names the mistake: an unknown setting (usually a typo; the message lists the real ones), a value that should be a list of words in quotes or `true`/`false`, broken TOML, a phrase with no words in it such as `"*"`, or a blog with no Python that doesn't say its `platform` and `sites`. See [Blog rule files](../README.md#blog-rule-files).
+
 ### Output file
 
 **`error: can't write …: the folder … doesn't exist`**: create the folder, or fix `--output`.
@@ -115,7 +120,7 @@ On the command line, the entry is in your manifest's `[alt_text]` table, and the
 ### `call-to-action`
 
 **`N website calls-to-action (subscribe/support) were removed, unlinked or kept; review the warnings above`**
-Website calls-to-action were taken out of the book (Flaming Hydra and Welcome to Hell World books). Listed are buttons and lines that only sell (Welcome to Hell World), closing appeals that were removed (the last section of a post, after its final rule, asking readers to subscribe or donate, e.g. "If you enjoyed this free post, subscribe…", or promoting a Kickstarter campaign), paragraphs whose subscribe, sign-up or donate link was removed (the words stay, e.g. "why not subscribe?"), and promotional images kept because they're in the middle of a post. Check that each removed closing appeal really was one; if a sentence now reads oddly, edit the post or leave the post out.
+Website calls-to-action were taken out of the book. Listed are buttons and lines that only sell (a blog can keep a line with `keep_lines` in its [rules file](../README.md#blog-rule-files)), closing appeals that were removed (the last section of a post, after its final rule, asking readers to subscribe or donate, e.g. "If you enjoyed this free post, subscribe…", or promoting a Kickstarter campaign), paragraphs whose subscribe, sign-up or donate link was removed (the words stay, e.g. "why not subscribe?"), and promotional images kept because they're in the middle of a post. Check that each removed closing appeal really was one; if a sentence now reads oddly, edit the post or leave the post out.
 
 ### `embed-removed`
 

@@ -73,7 +73,7 @@ When a layer removes a website call-to-action **link** but keeps its words, it m
 
 Use `phoenix_ebook.canonical.mark_call_to_action`. Ghost marks dead `#/portal/…` links; Flaming Hydra marks its `/subscribe` links and mid-post banners.
 
-A processor that removes a call-to-action whole leaves an empty marker for the report: `data-call-to-action-removed` holds the removed words, `data-call-to-action-removed-url` its link, and `data-call-to-action-removed-as` what it was ("button"; "closing appeal" if absent).
+A processor that removes a call-to-action whole leaves an empty marker for the report: `data-call-to-action-removed` holds the removed words, `data-call-to-action-removed-url` its link, and `data-call-to-action-removed-as` what it was ("button", "sales line"; "closing appeal" if absent).
 
 ## Changed links
 

@@ -30,6 +30,10 @@ class ManifestError(PhoenixError):
     """The TOML manifest can't be read or is missing required settings."""
 
 
+class SiteFileError(PhoenixError):
+    """A blog's rules file (``phoenix_ebook/sites/``) has a mistake. It stops that blog's builds only."""
+
+
 class OutputError(PhoenixError):
     """The EPUB can't be written where requested."""
 

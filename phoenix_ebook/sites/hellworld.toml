@@ -1,0 +1,13 @@
+# Welcome to Hell World. Every button sells a subscription or a book.
+platform = "ghost"
+sites = ["hellworld"]  # hellworld.ghost.io and welcometohellworld.com
+
+remove_all_buttons = true
+remove_lines = [
+    "subscribe please and thank you",
+    "subscribe now please and thank you",
+    "support independent media",
+    "support indie media",
+    "share welcome to hell world",
+    "welcome to hell world is a reader-supported publication *",
+]

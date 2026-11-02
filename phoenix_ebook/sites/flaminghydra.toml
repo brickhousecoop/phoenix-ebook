@@ -1,0 +1,22 @@
+# Flaming Hydra. Its unusual logic (bylines, comments invitations, banners) is in processors/flaminghydra.py.
+sales_links = [
+    "/subscribe",
+    "/signup",
+    "/membership",
+    "/donate",
+    "flaminghydra.com/subscribe",
+    "flaminghydra.com/signup",
+    "flaminghydra.com/membership",
+    "flaminghydra.com/donate",
+    "flaminghydra.ghost.io/subscribe",
+    "flaminghydra.ghost.io/signup",
+    "flaminghydra.ghost.io/membership",
+    "flaminghydra.ghost.io/donate",
+]
+button_links = [
+    "shop.flaminghydra.com",
+]
+promo_links = [
+    "kickstarter.com/projects/thebrickhouse/",
+    "tally.so/r/7RyjGA",
+]

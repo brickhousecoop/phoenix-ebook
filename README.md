@@ -9,8 +9,8 @@ phoenix-ebook fetches posts from a publishing platform, cleans up each site's HT
 | Site | Platform | Processor |
 |---|---|---|
 | [Flaming Hydra](https://flaminghydra.com) | Ghost | `flaminghydra` |
-| [Welcome to Hell World](https://www.welcometohellworld.com) | Ghost | `hellworld` |
-| Any other Ghost site | Ghost | `generic` |
+| [Welcome to Hell World](https://www.welcometohellworld.com) | Ghost | `hellworld` (only a [rules file](#blog-rule-files)) |
+| Any other Ghost site | Ghost | `generic`: the shared cleanup and the default rules |
 
 More are on the way: more platforms, more site-specific processors and, eventually, a web UI for building books without the command line.
 
@@ -167,7 +167,7 @@ Embedded media become **link cards**: a YouTube or Vimeo video, a Spotify episod
 
 Links in posts are checked: a link to a section of the post that doesn't exist (e.g. a digest's contents pointing at a renamed section) is pointed at the section it meant, a mistyped address (stray spaces or quotes, a missing `https://`) is fixed, and a link that can't be repaired loses the link but keeps its words. Every changed link is listed after the build with its old and new address, so you can check the repairs.
 
-Welcome to Hell World books lose every button (each sells a subscription or a book) and the lines that only sell ("Subscribe now", "Get 20% off for 1 year", "Subscribe to read the rest"), and each is listed after the build. A "read the rest" line stays when it links elsewhere and little follows it, because that post really is shortened. Longer sentences asking readers to subscribe, "Read the rest here" links and book notices stay. Tweets imported without their text show the writer, the date and a link.
+Every book loses lines that only sell ("Subscribe now", "Get 20% off for 1 year", "Subscribe to read the rest"), paragraphs that are only a sign-up link, and share buttons, and each is listed after the build. A "read the rest" line stays when it links elsewhere and little follows it, because that post really is shortened. Longer sentences asking readers to subscribe stay. A blog can add to these with its [rules file](#blog-rule-files). Welcome to Hell World also loses every button, since each one sells a subscription or a book. Tweets imported without their text show the writer, the date and a link.
 
 Website calls-to-action are taken out of Flaming Hydra books: subscribe banners at the end of posts, and subscribe, support, share and shop buttons. Subscribe or sign-up links inside sentences keep their words but lose the (dead) link, and each such paragraph, plus any promotional image kept because it's mid-post, is listed after the build for review.
 
@@ -262,7 +262,8 @@ Then open <http://127.0.0.1:8000> and sign in. It uses the same key lookup as th
 build_epub.py            # CLI
 phoenix_ebook/
 ├── platforms/           # post sources (Ghost today)
-├── processors/          # per-site HTML cleanup
+├── processors/          # per-site HTML cleanup, and the shared rules (rules.py)
+├── sites/               # what each blog removes, as data
 ├── epub_builder.py      # EPUB assembly
 ├── images.py            # image fetching, validation and optimization
 ├── alt_text.py          # alt text checks and overrides
@@ -276,7 +277,33 @@ Each platform converts its own HTML dialect into one **canonical chapter HTML**;
 
 **New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name` (and `default_processor` if not `"generic"`), decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, run through your `normalize_html()` so it's canonical (Ghost's, for example, drops editor `kg-*` classes); authors as `Author(name, url)`; `published_at` in the site's own timezone; and the feature image fields if the platform has them. Override `canonical_image_url()` if the platform serves size variants of the same image. The docstrings on `Platform` have the full contract, including the errors to raise.
 
-**New site processor.** Subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, `platform` and `sites` (domain substrings it handles), decorate it with `@register_processor`, and import the module in `phoenix_ebook/processors/__init__.py`. It's chosen automatically for matching sites on that platform (or with `--processor`). Overrides of `clean()` **must call `super().clean()` first**; that's where the shared web cleanup happens. See `flaminghydra.py` for an example.
+**New site.** Most sites need no Python, only a [rules file](#blog-rule-files), or nothing at all if the default rules are enough. For unusual logic, subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, `platform` and `sites` (domain substrings it handles), decorate it with `@register_processor`, import the module in `phoenix_ebook/processors/__init__.py`, and override `apply_rules()`. It's chosen automatically for matching sites on that platform (or with `--processor`). Overrides of `clean()` **must call `super().clean()` first**; that's where the shared web cleanup happens. See `flaminghydra.py` for an example.
+
+### Blog rule files
+
+`phoenix_ebook/sites/<name>.toml` holds what one blog removes, on top of the defaults in `_defaults.toml`. The file's name is its `--processor` name, and a blog with no Python says its `platform` and `sites` there:
+
+```toml
+platform = "ghost"
+sites = ["hellworld"]  # matches hellworld.ghost.io and welcometohellworld.com
+
+remove_all_buttons = true
+remove_lines = [
+    "support independent media",
+    "welcome to hell world is a reader-supported publication *",
+]
+```
+
+| Setting | What it does |
+|---|---|
+| `remove_lines` | Adds phrases to the defaults |
+| `keep_lines` | Phrases to keep, even if a default would remove them |
+| `sales_links` | Addresses: buttons linking there go, links in sentences lose the link and keep their words, and a final section with one goes |
+| `promo_links` | Addresses: buttons linking there go, links in sentences stay, and a final section made up of them goes |
+| `button_links` | Addresses: buttons linking there go, and nothing else changes |
+| `remove_all_buttons` | `true` removes every button |
+
+A **phrase** matches a whole line, ignoring capitals and final punctuation. `#` is any number and `*` is any words: `get #% off *` matches "Get 20% off for 1 year". A phrase never matches a line over 35 words, and quotes are left alone. An **address** matches from its start, ignoring `https://` and `www.`. A mistake in a file stops builds for that blog only, with an error naming the file.
 
 ### Using it as a library
 
