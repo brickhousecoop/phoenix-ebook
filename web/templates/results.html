@@ -39,7 +39,8 @@
   <h1 tabindex="-1" autofocus>Your book is ready</h1>
   <p><a class="download" href="{{ url }}" download>Download “{{ spec.title }}” (EPUB)</a></p>
   <p class="hint">{{ spec.source.slugs | length }} post{{ '' if spec.source.slugs | length == 1 else 's' }}.
-    Keep the link if you want the book again later: anyone with it can download the book.</p>
+    The link works for {{ keep_hours }} hours, then the book is deleted, so download it now. Anyone with the link
+    can download the book until then.</p>
   <p><a href="/">Build another book</a></p>
 
   <form id="book-form" method="post" action="/" enctype="multipart/form-data" novalidate>

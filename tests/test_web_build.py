@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 
 import pytest
 import requests
 
-from conftest import TEST_USER, FakeResponse, FakeSession, ok, png, web_client
+from conftest import REPO, TEST_USER, FakeResponse, FakeSession, ok, png, web_client
 from phoenix_ebook import platforms, processors  # noqa: F401 — ensures registrations run
 from phoenix_ebook.epub_builder import build, fetch_posts
 from phoenix_ebook.errors import PhoenixError
@@ -228,3 +229,63 @@ def test_blob_upload_when_deployed(monkeypatch, tmp_path):
     assert kwargs == {"access": "public", "content_type": storage.EPUB_TYPE, "multipart": True}
     assert head == b"PK"
     assert not (tmp_path / "books").exists()
+
+
+# ---------------------------------------------------------------- old books are deleted (#33)
+
+def _blob_listing(monkeypatch, items):
+    import vercel.blob
+    from vercel.blob import ListBlobItem
+    deleted = []
+    listing = [ListBlobItem(url=f"https://x.public.blob.vercel-storage.com/{path}", download_url="", pathname=path,
+                            size=1, uploaded_at=when) for path, when in items]
+    monkeypatch.setattr(vercel.blob, "iter_objects", lambda prefix=None, **kw: iter(
+        [i for i in listing if i.pathname.startswith(prefix or "")]))
+    monkeypatch.setattr(vercel.blob, "delete", lambda urls, **kw: deleted.extend(urls))
+    monkeypatch.setenv(storage.BLOB_TOKEN_ENV, "vercel_blob_rw_test")
+    return deleted
+
+
+def test_book_folders_older_than_three_hours_are_deleted_whole(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    now = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+    deleted = _blob_listing(monkeypatch, [
+        ("books/old/Book.epub", now - timedelta(hours=3, minutes=1)),
+        ("books/old/uploads/cover/c.png", now - timedelta(hours=3, minutes=2)),
+        ("books/new/Book.epub", now - timedelta(hours=2, minutes=59)),
+        ("books/mixed/uploads/cover/c.png", now - timedelta(hours=5)),  # its book came later
+        ("books/mixed/Book.epub", now - timedelta(minutes=10)),
+    ])
+    assert storage.delete_expired(now) == 1
+    assert sorted(u.split(".com/")[1] for u in deleted) == ["books/old/Book.epub", "books/old/uploads/cover/c.png"]
+
+
+def test_without_blob_nothing_is_deleted(monkeypatch, tmp_path):
+    monkeypatch.delenv(storage.BLOB_TOKEN_ENV, raising=False)
+    assert storage.delete_expired() == 0
+
+
+def test_the_job_needs_the_cron_secret_and_no_sign_in(monkeypatch, caplog):
+    deleted = _blob_listing(monkeypatch, [])
+    client = web_client(None)
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    assert client.get(main.EXPIRE_PATH, headers={"Authorization": "Bearer "}).status_code == 401
+    monkeypatch.setenv("CRON_SECRET", "s3cret-value-of-16+")
+    assert client.get(main.EXPIRE_PATH).status_code == 401
+    assert client.get(main.EXPIRE_PATH, headers={"Authorization": "Bearer wrong"}).status_code == 401
+    with caplog.at_level(logging.INFO, logger="web.activity"):
+        ok = client.get(main.EXPIRE_PATH, headers={"Authorization": "Bearer s3cret-value-of-16+"}, follow_redirects=False)
+    assert ok.status_code == 200 and "Deleted 0 book folders" in ok.text
+    assert "expired books: deleted 0 folders" in caplog.text
+    assert deleted == []
+
+
+def test_vercel_runs_the_job_every_quarter_hour():
+    crons = json.loads((REPO / "vercel.json").read_text())["crons"]
+    assert crons == [{"path": main.EXPIRE_PATH, "schedule": "*/15 * * * *"}]
+
+
+def test_the_results_page_says_how_long_the_link_works(monkeypatch):
+    wire(monkeypatch, post_route("a"))
+    page = " ".join(web_client().post("/", data={"posts": "flaminghydra.com/a", "title": "T"}).text.split())
+    assert "The link works for 3 hours, then the book is deleted" in page

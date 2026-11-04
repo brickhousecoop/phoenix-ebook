@@ -4,8 +4,10 @@ Run locally with ``uvicorn web.main:app --reload`` from the repo root.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import os
 import queue
 import threading
 from datetime import date
@@ -39,6 +41,7 @@ if not activity.handlers:
     activity.addHandler(logging.StreamHandler())
 
 SIGN_IN = "/sign-in"
+EXPIRE_PATH = "/jobs/delete-expired-books"  # called by Vercel Cron; see vercel.json
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 STREAM_TYPE = "application/x-ndjson"
@@ -79,6 +82,7 @@ def _outcome_page(raw: RawForm, outcome: Outcome, user: str, blogs: tuple[Blog, 
     fix_numbers = {id(p): n for n, p in enumerate(fixable)}
     return templates.get_template("results.html").render(
         user=user,
+        keep_hours=round(storage.KEEP_FOR.total_seconds() / 3600),
         spec=spec,
         url=outcome.url,
         groups=problems.group_by_post(outcome.problems, outcome.check.posts),
@@ -188,7 +192,7 @@ async def require_sign_in(request: Request, call_next) -> Response:
     and every POST must come from this site's own pages."""
     if request.method == "POST" and not _same_origin(request):
         return PlainTextResponse("This form must be sent from the site's own pages.", status_code=403)
-    if request.url.path == SIGN_IN:
+    if request.url.path in (SIGN_IN, EXPIRE_PATH):  # the job checks its own secret
         return await call_next(request)
     try:
         user = auth.user_from_cookie(request.cookies.get(auth.COOKIE))
@@ -204,6 +208,19 @@ async def require_sign_in(request: Request, call_next) -> Response:
         return RedirectResponse(f"{SIGN_IN}?next={quote(next_path)}", status_code=303)
     request.state.user = user
     return await call_next(request)
+
+
+@app.get(EXPIRE_PATH)
+async def delete_expired_books(request: Request) -> PlainTextResponse:
+    """Vercel Cron's call to delete old books (#33). Only a caller holding ``CRON_SECRET`` may run it;
+    without that variable nobody can."""
+    secret = os.environ.get("CRON_SECRET", "")
+    given = request.headers.get("authorization", "")
+    if not secret or not hmac.compare_digest(given.encode(), f"Bearer {secret}".encode()):
+        return PlainTextResponse("Not allowed.", status_code=401)
+    deleted = await run_in_threadpool(storage.delete_expired)
+    activity.info("expired books: deleted %d folders", deleted)
+    return PlainTextResponse(f"Deleted {deleted} book folders.")
 
 
 @app.get(SIGN_IN, response_class=HTMLResponse)

@@ -2,7 +2,9 @@
 
 Each build gets an unguessable folder (128 random bits) holding the book and the
 files uploaded for it, so a rebuild can reuse the uploads (a browser can't refill
-a file input). Anyone with a link can download from it. Nothing expires yet.
+a file input). Anyone with a link can download from it, so on Blob each folder is
+deleted ``KEEP_FOR`` after it was written (#33), by a scheduled job calling
+``delete_expired()``. Local folders are left to whoever runs the site.
 """
 from __future__ import annotations
 
@@ -11,6 +13,7 @@ import re
 import secrets
 import shutil
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -21,6 +24,7 @@ BLOB_HOST_SUFFIX = ".public.blob.vercel-storage.com"
 EPUB_TYPE = "application/epub+zip"
 LOCAL_DIR = Path(os.environ.get("PHOENIX_BOOKS_DIR") or Path(tempfile.gettempdir()) / "phoenix-books")
 LOCAL_URL_PREFIX = "/books"
+KEEP_FOR = timedelta(hours=3)  # how long a book's link (and its kept uploads) last on Blob
 
 
 def setup_problem() -> str | None:
@@ -65,6 +69,27 @@ def load_upload(ref: str) -> tuple[bytes, str] | None:
         response = requests.get(ref, timeout=30)
         return (response.content, name) if response.status_code == 200 else None
     return None
+
+
+def delete_expired(now: datetime | None = None) -> int:
+    """Delete every Blob book folder whose newest file is older than ``KEEP_FOR``; how many folders
+    went. Does nothing without Blob. Deleted files can still be served for about a minute from
+    Vercel's cache."""
+    if not os.environ.get(BLOB_TOKEN_ENV):
+        return 0
+    from vercel.blob import delete, iter_objects
+
+    cutoff = (now or datetime.now(timezone.utc)) - KEEP_FOR
+    folders: dict[str, tuple[datetime, list[str]]] = {}
+    for item in iter_objects(prefix="books/"):
+        folder = item.pathname.split("/")[1] if item.pathname.count("/") >= 2 else item.pathname
+        newest, urls = folders.get(folder, (item.uploaded_at, []))
+        folders[folder] = (max(newest, item.uploaded_at), urls + [item.url])
+    expired = [urls for newest, urls in folders.values() if newest < cutoff]
+    urls = [url for folder_urls in expired for url in folder_urls]
+    for start in range(0, len(urls), 500):
+        delete(urls[start:start + 500])
+    return len(expired)
 
 
 def local_book(key: str) -> Path | None:

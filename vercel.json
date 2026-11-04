@@ -5,5 +5,11 @@
       "maxDuration": 800,
       "excludeFiles": "{tests/**,docs/adr/**,docs/agents/**}"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/jobs/delete-expired-books",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

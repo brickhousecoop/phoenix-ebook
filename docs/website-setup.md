@@ -43,6 +43,8 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 
    Then check **Settings → Environment Variables** for **`BLOB_READ_WRITE_TOKEN`**. The site needs this exact variable (Vercel's Python SDK reads nothing else). Without it, every build stops with "This site isn't connected to its Blob store".
 
+   **Old books are deleted** 3 hours after they're built (#33): a Vercel Cron job (`vercel.json`) calls `/jobs/delete-expired-books` every 15 minutes, and it deletes each book folder, uploads included, whose newest file is older than that. Add **`CRON_SECRET`** (**Settings → Environment Variables**, **Production**, **Sensitive**: any random value of at least 16 characters, e.g. from `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`). Vercel sends it with each call, and the job refuses every caller without it, so without the variable nothing is deleted. Cron jobs only run on production deployments; **Settings → Cron Jobs** lists the job, its recent runs and a **Run** button. Each run logs `expired books: deleted N folders`.
+
 5. **Add the Ghost key.** If the site has [the store](#the-store), the key goes there and this step is skipped. Without it, **Settings → Environment Variables → Add**:
    - **Name:** `PHOENIX_SECRET_GHOST_FLAMINGHYDRA_GHOST_IO`;
    - **Value:** the Flaming Hydra Ghost **Admin API key** (`id:secret`, from Ghost Admin → Settings → Integrations), the same key the command line uses;
@@ -192,4 +194,4 @@ Measured on 2026-10-07, building recent Flaming Hydra posts on the live site and
 - **Time limit:** 800 seconds per request. A 100-post book uses about a seventh of it on Flaming Hydra, and about half on Welcome to Hell World.
 - **Upload limit:** Vercel refuses any request over 4.5 MB with "413 Request Entity Too Large" before the site sees it. The form's page totals the chosen files first and says so if they're over 4.4 MB.
 - **A closed tab doesn't stop a build.** Tested on 2026-10-07: a 20-post build disconnected after a second still finished, and its complete book was saved to the Blob store. Nobody sees the link, though, so the answer is to build again. That uses another build's worth of time, which is one reason for the spend cap.
-- **Storage:** books are kept in the Blob store with no expiry; nothing deletes them yet (#33). Each book's folder also holds its uploads (cover, content pages), so a rebuild can reuse them.
+- **Storage:** books are kept in the Blob store for 3 hours, then deleted (#33); the results page says so. Each book's folder also holds its uploads (cover, content pages), so a rebuild can reuse them. A rebuild after the 3 hours still works, but asks for those files again. Deleted books can still be downloaded for about a minute, from Vercel's cache.
