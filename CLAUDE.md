@@ -3,7 +3,7 @@
 Ghost→EPUB builder. Name it "phoenix-ebook" in prose — it is one module of a larger Phoenix project, not "Phoenix" itself. Currently targets `flaminghydra.ghost.io`. Trajectory:
 1. Add more source platforms.
 2. Add more site-specific HTML quirks via per-site processors.
-3. Eventually: web UI that drives the library (not just a CLI).
+3. A web UI that drives the library (not just a CLI): live at phoenix-ebook.vercel.app, see `docs/website-setup.md`.
 
 The code is already split for that trajectory — keep the seams.
 
@@ -34,8 +34,20 @@ phoenix_ebook/
 │   ├── core.css                # Standard Ebooks snapshot (CC0) — never edit; see its header
 │   └── phoenix.css             # our styles for our markup; all overrides go here
 └── epub_builder.py             # EPUB assembly
-tests/                          # offline pytest suite (fixtures in conftest.py)
+web/                            # the website (FastAPI on Vercel; ADRs 0002-0004); calls the library, never the reverse
+├── main.py                     # routes, sign-in middleware, the old-books cron job (/jobs/delete-expired-books)
+├── forms.py                    # form -> BookSpec, every pre-build check; BLOGS for a site without the store
+├── runs.py                     # one submission: check, build, save
+├── auth.py                     # users, passwords, sign-in cookies
+├── store.py                    # read-only Postgres store: blogs, encrypted keys, users, access
+├── store_admin.py              # writing the store (used only by scripts/store_admin.py)
+├── storage.py                  # Vercel Blob or a local folder; books deleted after 3 hours on Blob
+├── problems.py                 # warning meanings, from docs/troubleshooting.md
+└── templates/
+tests/                          # offline pytest suite (fixtures in conftest.py); store tests use Docker Postgres if present
 scripts/fetch_epubcheck.py      # pinned epubcheck into .tools/ for the epubcheck tests
+scripts/store_admin.py          # manage the website's store, on the maintainer's computer only
+scripts/add_user.py             # website users for a site without the store
 ```
 
 Adding a new source platform = new module in `phoenix_ebook/platforms/` that registers itself and converts its HTML dialect to **canonical chapter HTML** in `normalize_html` (ADR 0001, `docs/adr/0001-…`; the canonical forms, e.g. notes, are in `docs/canonical-html.md`). Adding a site's lists = a file in `phoenix_ebook/sites/`; adding unusual logic = a processor module with `platform` + `sites`. Platform-specific rules never go in `HtmlProcessor.clean()` or the builder; site-specific rules never go in a platform. Don't collapse these layers back into `build_epub.py`.

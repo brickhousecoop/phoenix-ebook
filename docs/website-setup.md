@@ -6,10 +6,10 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 
 - **Address:** <https://phoenix-ebook.vercel.app>, behind the site's own sign-in ([ADR 0003](adr/0003-website-sign-in-own-passwords.md)): only the users set up below can build books.
 - **Vercel project:** `phoenix-ebook`, on **The Brick House** team (`brickhousecoop`, Pro plan).
-- **Deploys:** connected to GitHub `brickhousecoop/phoenix-ebook`. Every push to `main` deploys to production; other branches get their own preview address, behind Vercel's own sign-in (team members only) as well as the site's.
+- **Deploys:** connected to GitHub `brickhousecoop/phoenix-ebook`. Every push to `main` deploys to production; other branches get their own preview address, behind the site's sign-in like production. Previews share production's store and Blob store.
 - **Configuration in the repo:**
   - `pyproject.toml`: Python 3.14, the app's entrypoint (`web.main:app`) and its dependencies;
-  - `vercel.json`: the 800-second time limit, and tests left out of the deployment;
+  - `vercel.json`: the 800-second time limit, tests left out of the deployment, and the cron job that deletes old books;
   - `.vercelignore`: an allow-list of what a command-line deploy uploads.
 
 ## Who can do what
@@ -34,7 +34,7 @@ How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel
 
    Press **Deploy**. The first deploy goes live straight away.
 
-3. **Protect the previews.** Project **Settings → Deployment Protection → Vercel Authentication → Standard Protection** (the default). It puts preview addresses behind Vercel's sign-in, so only team members reach them; `phoenix-ebook.vercel.app` itself is left to the site's own sign-in. Until October 2026 the site had no sign-in of its own and used *All Deployments* instead.
+3. **Turn off Vercel Authentication.** Project **Settings → Deployment Protection → Vercel Authentication: off**. The site's own sign-in guards production and previews alike. Vercel's Standard Protection also covered `phoenix-ebook.vercel.app`, so it was turned off entirely on 2026-10-14. Before the site had a sign-in of its own (until October 2026), *All Deployments* protection was the only gate.
 
 4. **Create the Blob store** (where finished books go). In the project, **Storage → Create Database → Blob**:
    - **Name:** e.g. `phoenix-ebook-books`;
@@ -168,13 +168,13 @@ When the site runs on your own computer, it uses `~/.phoenix_users.json` if `PHO
 
 **Logs.** Each build is logged with who started it, the site, the number of posts and whether a book came out (`build: user=… site=… posts=… built`, or `refused` when the blog isn't theirs); each failed sign-in with the email address tried (`sign-in failed: email=…`), never the password. See [Logs](#logs) for where to read them. Nothing limits how many builds a user runs.
 
-**Book links are still public.** Anyone a user passes a download link to can open the book, paid posts and drafts included (#37).
+**Book links are public for 3 hours.** Anyone a user passes a download link to can open the book, paid posts and drafts included, until it's deleted 3 hours after the build (#33). Signed, sign-in-only links (#37) were set aside; see ADR 0002.
 
 ## Testing from a script
 
 Scripts can sign in like a person: `POST /sign-in` with `email` and `password`, and an `Origin` header naming the site (every form sent to the site must have one), then send the `phoenix_session` cookie that comes back. Use a user made for the test, and remove it afterwards.
 
-Preview addresses are also behind Vercel's sign-in, which stops scripts. For tests run from a sandbox or a CI job, a member can create a bypass under **Settings → Deployment Protection → Protection Bypass for Automation**. Send it as the `x-vercel-protection-bypass` header. Anyone holding it gets past the sign-in, so **delete it when the testing is done**.
+With Vercel Authentication off, previews need nothing more. If it's ever turned back on, a member can create a bypass for scripts under **Settings → Deployment Protection → Protection Bypass for Automation**, sent as the `x-vercel-protection-bypass` header. Anyone holding it gets past Vercel's sign-in, so **delete it when the testing is done**.
 
 ## Logs
 

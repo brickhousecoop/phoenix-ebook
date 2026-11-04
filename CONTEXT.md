@@ -87,3 +87,11 @@ _Avoid_: Member (a paying reader of a site), editor (the book's credited compile
 **Store**:
 The website's one database of blogs, their keys, users and their access.
 _Avoid_: Secret store (`SecretStore`, the library's key lookup, which is separate), Blob store (where finished books go)
+
+**Access**:
+Which blogs a user may build from. New users and new blogs start with none; it's granted per blog.
+_Avoid_: Permission, role (there are no roles)
+
+**Short name**:
+What the management script calls a blog, like `hellworld`. The website doesn't use it.
+_Avoid_: Slug (a post's address part), handle
