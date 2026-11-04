@@ -217,16 +217,6 @@ def test_build_is_logged_with_user_site_and_count(monkeypatch, caplog):
     assert f"build: user={TEST_USER} site={SITE_URL} posts=1 built" in caplog.text
 
 
-def test_may_build_is_asked_before_building(monkeypatch):
-    wire_post(monkeypatch)
-    asked = []
-    monkeypatch.setattr("web.runs.may_build", lambda user, source: asked.append((user, source.url)) or False)
-    page = web_client().post("/", data={"posts": "flaminghydra.com/good", "title": "T"}).text
-    assert asked == [(TEST_USER, SITE_URL)]
-    assert "can&#39;t build books from" in page or "can't build books from" in page
-    assert "Your book is ready" not in page
-
-
 def test_every_page_shows_who_is_signed_in_and_sign_out(monkeypatch):
     wire_post(monkeypatch)
     client = web_client()

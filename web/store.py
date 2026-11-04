@@ -83,6 +83,14 @@ class Store:
         rows = self._rows("SELECT name, platform, url, hosts FROM blogs ORDER BY name")
         return tuple(Blog(name, platform, url, tuple(hosts)) for name, platform, url, hosts in rows)
 
+    def blogs_and_access(self, email: str) -> tuple[tuple[Blog, ...], frozenset[str]]:
+        """Every blog, and the names of those ``email`` may build from, in one read."""
+        rows = self._rows("""SELECT b.name, b.platform, b.url, b.hosts, a.email IS NOT NULL
+                             FROM blogs b LEFT JOIN access a ON a.blog = b.name AND a.email = %s
+                             ORDER BY b.name""", (email,))
+        return (tuple(Blog(name, platform, url, tuple(hosts)) for name, platform, url, hosts, _ in rows),
+                frozenset(name for name, _, _, _, allowed in rows if allowed))
+
     def sealed_key(self, blog: Blog) -> SealedKey | None:
         rows = self._rows("SELECT key_ciphertext, key_master_id FROM blogs WHERE name = %s", (blog.name,))
         return SealedKey(bytes(rows[0][0]), rows[0][1]) if rows and rows[0][0] else None

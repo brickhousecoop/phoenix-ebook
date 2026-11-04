@@ -17,9 +17,8 @@ from phoenix_ebook.platforms.base import get_platform
 from phoenix_ebook.processors.base import get_processor
 
 from web import store
-from web.auth import may_build
 from web.store import Blog
-from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, check_submission
+from web.forms import UPLOAD_FIELDS, CheckResult, FormError, RawForm, blogs_for, check_submission
 from web.storage import load_upload, new_folder, save_book, save_upload, setup_problem
 
 log = logging.getLogger(__name__)
@@ -55,13 +54,15 @@ def describe(step: Progress) -> str:
 
 
 def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
-        session: requests.Session | None = None, *, user: str, blogs: tuple[Blog, ...] | None = None) -> Outcome:
+        session: requests.Session | None = None, *, user: str, blogs: tuple[Blog, ...] | None = None,
+        usable: tuple[Blog, ...] | None = None) -> Outcome:
     """Check ``raw`` and, if it passes, build and store the book for ``user``.
 
     Never raises: a failure part-way ends with its message on the form, which
     is refilled from ``raw``. Uploads (new, or kept from the last build) live in
     a temporary folder for the whole run, deleted at the end however it ends.
     A store outage during the checks ends the same way; after them, the build doesn't need the store.
+    ``blogs`` and ``usable`` (those ``user`` may build from, #41) default to ``blogs_for(user)``.
     """
     if problem := setup_problem():
         return Outcome(CheckResult(spec=None, errors=[FormError(None, problem)]))
@@ -82,15 +83,14 @@ def run(raw: RawForm, progress: Callable[[Progress], None] = lambda step: None,
                 path.write_bytes(data)
                 raw.paths[field_name] = str(path)
 
-            check = check_submission(raw, session, progress, blogs)
+            if blogs is None:
+                blogs, usable = blogs_for(user)
+            check = check_submission(raw, session, progress, blogs, usable)
             if not check.ok:
                 # Keep the uploads that were fine, so the refilled form can offer them again.
                 failed = {e.field for e in check.errors}
                 return Outcome(check, kept=_keep({k: v for k, v in raw.paths.items() if k not in failed},
                                                  new_folder()))
-            if not may_build(user, check.spec.source):
-                return Outcome(CheckResult(spec=None, errors=[FormError(
-                    "posts", f"You can't build books from {check.spec.source.url}.")]))
             return _build_and_store(check, session, progress, raw.paths)
     except store.StoreUnavailable:
         return Outcome(CheckResult(spec=None, errors=[FormError(None, store.TRY_AGAIN)]))

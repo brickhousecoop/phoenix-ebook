@@ -26,7 +26,7 @@ from phoenix_ebook.platforms.base import get_platform
 
 from web import auth, problems, storage, store
 from web.forms import (ALT_KINDS, CONTENT_FIELDS, MAX_OPEN_ALT_BOXES, MAX_POSTS, UPLOAD_FIELDS, Blog, CheckResult,
-                       RawForm, alt_fixes_from, current_blogs, merge_alt_fixes)
+                       RawForm, alt_fixes_from, blogs_for, merge_alt_fixes)
 from web.runs import Outcome, describe, run
 
 app = FastAPI()
@@ -107,7 +107,7 @@ def _announce(step: Progress) -> bool:
     return step.done in (1, step.total) or step.done % 10 == 0
 
 
-def _stream(raw: RawForm, user: str, blogs: tuple[Blog, ...]) -> Iterator[str]:
+def _stream(raw: RawForm, user: str, blogs: tuple[Blog, ...], usable: tuple[Blog, ...]) -> Iterator[str]:
     """Progress lines, then the final page, as newline-delimited JSON.
 
     The build runs in its own thread so a closed tab doesn't stop it: it
@@ -118,11 +118,11 @@ def _stream(raw: RawForm, user: str, blogs: tuple[Blog, ...]) -> Iterator[str]:
 
     def work() -> None:
         try:
-            outcome = run(raw, lambda step: events.put(("progress", step)), user=user, blogs=blogs)
+            outcome = run(raw, lambda step: events.put(("progress", step)), user=user, blogs=blogs, usable=usable)
             _log_build(user, raw, outcome)
-            events.put(("page", _outcome_page(raw, outcome, user, blogs)))
+            events.put(("page", _outcome_page(raw, outcome, user, usable)))
         except Exception:  # rendering failed; run() itself never raises
-            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]), user, blogs)))
+            events.put(("page", _form_page(raw, CheckResult(spec=None, errors=[]), user, usable)))
             raise
 
     threading.Thread(target=work, daemon=True).start()
@@ -140,6 +140,9 @@ def _log_build(user: str, raw: RawForm, outcome: Outcome) -> None:
     spec = outcome.check.spec
     site = spec.source.url if spec and spec.source else "-"
     count = sum(1 for line in raw.posts.splitlines() if line.strip())
+    if refused := outcome.check.refused:  # the blog wasn't theirs: logged so attempts can be seen (#41)
+        activity.info("build: user=%s site=%s posts=%d refused", user, refused.url, count)
+        return
     activity.info("build: user=%s site=%s posts=%d %s", user, site, count,
                   "built" if outcome.built else "not built")
 
@@ -240,7 +243,8 @@ async def sign_out(request: Request) -> RedirectResponse:
 async def form(request: Request) -> HTMLResponse:
     # The server's date, which on Vercel is UTC; see #29.
     raw = RawForm(pub_date=date.today().isoformat())
-    return HTMLResponse(_form_page(raw, CheckResult(spec=None), request.state.user, current_blogs()))
+    user = request.state.user
+    return HTMLResponse(_form_page(raw, CheckResult(spec=None), user, blogs_for(user)[1]))
 
 
 @app.post("/")
@@ -268,12 +272,12 @@ async def submit(request: Request):
         sort_names=text("sort_names"), alt_text=merge_alt_fixes(text("alt_text"), alt_fixes_from(form)),
     )
     user = request.state.user
-    blogs = current_blogs()
+    blogs, usable = blogs_for(user)
     if STREAM_TYPE in request.headers.get("accept", ""):
-        return StreamingResponse(_stream(raw, user, blogs), media_type=STREAM_TYPE)
-    outcome = await run_in_threadpool(run, raw, user=user, blogs=blogs)
+        return StreamingResponse(_stream(raw, user, blogs, usable), media_type=STREAM_TYPE)
+    outcome = await run_in_threadpool(run, raw, user=user, blogs=blogs, usable=usable)
     _log_build(user, raw, outcome)
-    return HTMLResponse(_outcome_page(raw, outcome, user, blogs))
+    return HTMLResponse(_outcome_page(raw, outcome, user, usable))
 
 
 @app.get(storage.LOCAL_URL_PREFIX + "/{token}/{name}")

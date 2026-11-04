@@ -79,7 +79,7 @@ Blogs, their keys, users and their access can live in one Postgres database ([AD
    .venv/bin/python scripts/store_admin.py import
    ```
 
-   It asks for the connection, without showing what you type. It reads `~/.phoenix_users.json` and the keys wherever this computer keeps them; `--users-file` and `--keys-file` name other files. The blogs come from `BLOGS` in the code, and current users get every blog. If anything is missing it says what, and writes nothing.
+   It asks for the connection, without showing what you type. It reads `~/.phoenix_users.json` and the keys wherever this computer keeps them; `--users-file` and `--keys-file` name other files. The blogs come from `BLOGS` in the code. On the first import every user gets every blog; after that, users keep the blogs they have and new users start with none. If anything is missing it says what, and writes nothing.
 
    It **shows these only once**, so keep the output until they're stored:
    - **the master key:** put it in your password manager;
@@ -92,9 +92,21 @@ Blogs, their keys, users and their access can live in one Postgres database ([AD
 
 6. **Delete the old variables** after a few days of normal use, redeploy, and build once more.
 
+### Who builds from which blog
+
+With the store, each user builds only from the blogs they've been given (#41). The form names only their blogs, addresses from any other blog are refused before anything is fetched (and logged as `refused`), and a user with no blogs sees a message instead of the form. Without the store (your own computer, tests), everyone may use every blog.
+
+```bash
+.venv/bin/python scripts/store_admin.py users                                # each user and their blogs
+.venv/bin/python scripts/store_admin.py grant ana@example.org hellworld      # let Ana build from Welcome to Hell World
+.venv/bin/python scripts/store_admin.py revoke ana@example.org hellworld     # and stop her
+```
+
+A blog can be named by its name, one of its addresses' hosts (`www.welcometohellworld.com`) or the first part of its API's host (`hellworld`, `flaminghydra`). A change counts from the user's next page, with no redeploy, and each one is exported straight away to `~/.phoenix_store_backups/`. Adding a user with `scripts/add_user.py` and running the import gives them no blogs until you grant one.
+
 ### Changing things
 
-Until #40 adds proper commands, edit your lists and run the import again, with `PHOENIX_STORE_MASTER_KEY` set in your shell. It makes the store match its inputs, **removing whatever they don't list**, and it takes effect on the next request, with no redeploy. It runs in one transaction: all of it happens, or none. `--new-login-passwords` replaces the read-only passwords, if you've lost them, and shows the new ones; the website's then has to change in Vercel.
+Until #40 adds the rest of the commands, edit your lists and run the import again, with `PHOENIX_STORE_MASTER_KEY` set in your shell. It makes the store match its inputs, **removing whatever they don't list**, and it takes effect on the next request, with no redeploy. It runs in one transaction: all of it happens, or none. `--new-login-passwords` replaces the read-only passwords, if you've lost them, and shows the new ones; the website's then has to change in Vercel.
 
 ### Backups
 
@@ -132,7 +144,7 @@ The script keeps its copy of the list in `~/.phoenix_users.json`, readable only 
 
 When the site runs on your own computer, it uses `~/.phoenix_users.json` if `PHOENIX_USERS` isn't set. Without `PHOENIX_SESSION_SECRET` there, restarting the site signs you out.
 
-**Logs.** Each build is logged with who started it, the site, the number of posts and whether a book came out (`build: user=… site=… posts=… built`); each failed sign-in with the email address tried (`sign-in failed: email=…`), never the password. See [Logs](#logs) for where to read them. Nothing limits how many builds a user runs.
+**Logs.** Each build is logged with who started it, the site, the number of posts and whether a book came out (`build: user=… site=… posts=… built`, or `refused` when the blog isn't theirs); each failed sign-in with the email address tried (`sign-in failed: email=…`), never the password. See [Logs](#logs) for where to read them. Nothing limits how many builds a user runs.
 
 **Book links are still public.** Anyone a user passes a download link to can open the book, paid posts and drafts included (#37).
 

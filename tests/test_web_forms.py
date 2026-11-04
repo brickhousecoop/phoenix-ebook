@@ -33,11 +33,11 @@ HYDRA, HELL = forms.BLOGS
     ("https://hellworld.ghost.io/my-post/", HELL),
 ])
 def test_post_list_finds_the_blog_from_a_full_address(address, blog):
-    assert forms._check_post_list(address) == (blog, ["my-post"], [])
+    assert forms._check_post_list(address) == (blog, ["my-post"], [], None)
 
 
 def test_post_list_rejects_bare_slugs_and_says_what_to_do():
-    blog, slugs, errors = forms._check_post_list("https://flaminghydra.com/good/\nmy-post\n")
+    blog, slugs, errors, _ = forms._check_post_list("https://flaminghydra.com/good/\nmy-post\n")
     assert slugs == ["good"]
     assert [e.field for e in errors] == ["posts"]
     assert "not a full post address: line 2" in errors[0].message
@@ -47,7 +47,7 @@ def test_post_list_rejects_bare_slugs_and_says_what_to_do():
 @pytest.mark.parametrize("address", ["https://example.com/other", "notflaminghydra.com/other",
                                      "flaminghydra.com.example.org/other"])
 def test_post_list_rejects_other_sites_naming_the_blogs(address):
-    _, slugs, errors = forms._check_post_list(f"flaminghydra.com/good\n{address}\n")
+    _, slugs, errors, _ = forms._check_post_list(f"flaminghydra.com/good\n{address}\n")
     assert slugs == ["good"]
     assert len(errors) == 1
     assert "line 2" in errors[0].message
@@ -55,13 +55,13 @@ def test_post_list_rejects_other_sites_naming_the_blogs(address):
 
 
 def test_post_list_rejects_a_blog_home_page():
-    _, slugs, errors = forms._check_post_list("https://flaminghydra.com/")
+    _, slugs, errors, _ = forms._check_post_list("https://flaminghydra.com/")
     assert slugs == []
     assert "not a full post address" in errors[0].message
 
 
 def test_post_list_rejects_two_blogs_naming_the_lines_of_each():
-    blog, _, errors = forms._check_post_list("flaminghydra.com/a\nhellworld.ghost.io/b\nflaminghydra.com/c")
+    blog, _, errors, _ = forms._check_post_list("flaminghydra.com/a\nhellworld.ghost.io/b\nflaminghydra.com/c")
     assert blog is None
     assert len(errors) == 1
     assert "one blog" in errors[0].message
@@ -70,20 +70,20 @@ def test_post_list_rejects_two_blogs_naming_the_lines_of_each():
 
 
 def test_post_list_reports_duplicates_with_line_numbers():
-    _, slugs, errors = forms._check_post_list("flaminghydra.com/a\nflaminghydra.com/b\nflaminghydra.ghost.io/a\n")
+    _, slugs, errors, _ = forms._check_post_list("flaminghydra.com/a\nflaminghydra.com/b\nflaminghydra.ghost.io/a\n")
     assert slugs == ["a", "b"]
     assert any("line 3 repeats line 1" in e.message for e in errors)
 
 
 def test_post_list_rejects_more_than_max_posts():
     text = "\n".join(f"flaminghydra.com/post-{i}" for i in range(MAX_POSTS + 1))
-    _, slugs, errors = forms._check_post_list(text)
+    _, slugs, errors, _ = forms._check_post_list(text)
     assert len(slugs) == MAX_POSTS + 1
     assert any(str(MAX_POSTS) in e.message for e in errors)
 
 
 def test_post_list_requires_at_least_one_post():
-    assert forms._check_post_list("   \n\n") == (None, [], [forms.FormError("posts", "add at least one post address")])
+    assert forms._check_post_list("   \n\n") == (None, [], [forms.FormError("posts", "add at least one post address")], None)
 
 
 def test_build_spec_takes_source_and_processor_from_the_blog():

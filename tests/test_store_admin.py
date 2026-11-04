@@ -294,3 +294,72 @@ def test_the_export_command_uses_a_read_only_login_and_the_import_command_restor
     assert script.main(["import", "--from-export", str(path)]) == 0
     assert _tables(url) == data
     assert "Master key" not in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- access (#41)
+
+def _run(monkeypatch, url, tmp_path, *argv):
+    script = _script()
+    monkeypatch.setenv(script.ADMIN_URL_ENV, url)
+    monkeypatch.setattr(script, "BACKUP_DIR", tmp_path / "backups")
+    return script, script.main(list(argv))
+
+
+def test_revoke_and_grant_change_what_the_website_allows_and_are_backed_up(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    monkeypatch.setenv(store.URL_ENV, logins[store_admin.SITE_LOGIN])
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    assert forms.blogs_for(TEST_USER)[1] == BLOGS
+
+    _, code = _run(monkeypatch, url, tmp_path, "revoke", TEST_USER.upper(), "bblog")
+    assert code == 0
+    assert "can no longer build from B Blog" in capsys.readouterr().out
+    assert forms.blogs_for(TEST_USER) == (BLOGS, (BLOG_A,))
+    backups = list((tmp_path / "backups").iterdir())
+    assert len(backups) == 1 and stat.S_IMODE(backups[0].stat().st_mode) == 0o600
+    assert store_admin.from_export(backups[0].read_text()).access == [(TEST_USER, "A Blog")]
+
+    _, code = _run(monkeypatch, url, tmp_path, "grant", TEST_USER, "B Blog")
+    assert code == 0 and "can now build from B Blog" in capsys.readouterr().out
+    assert forms.blogs_for(TEST_USER)[1] == BLOGS
+
+
+def test_granting_twice_changes_nothing_and_makes_no_backup(loaded, tmp_path, monkeypatch, capsys):
+    url, data, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "grant", TEST_USER, "ablog.com")
+    assert code == 0 and "could already build from A Blog" in capsys.readouterr().out
+    assert not (tmp_path / "backups").exists()
+    assert _tables(url) == data
+
+
+@pytest.mark.parametrize("argv, says", [
+    (["grant", TEST_USER, "nope"], "No blog called 'nope'. The blogs are: A Blog, B Blog"),
+    (["revoke", "stranger@example.org", "ablog"], "stranger@example.org isn't a user"),
+])
+def test_an_unknown_blog_or_user_is_named_and_nothing_changes(loaded, tmp_path, monkeypatch, capsys, argv, says):
+    url, data, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, *argv)
+    assert code == 1 and says in capsys.readouterr().err
+    assert _tables(url) == data
+
+
+def test_users_lists_each_users_blogs(loaded, tmp_path, monkeypatch, capsys):
+    url, _, _ = loaded
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("INSERT INTO users VALUES ('zed@example.org', '$argon2id$x')")
+    _, code = _run(monkeypatch, url, tmp_path, "users")
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert lines[0].split() == [TEST_USER, "A", "Blog,", "B", "Blog"]
+    assert lines[1].split() == ["zed@example.org", "(no", "blogs)"]
+
+
+def test_re_importing_keeps_each_users_blogs_and_new_users_start_with_none(postgres, files, tmp_path, monkeypatch):
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    assert _run_import(monkeypatch, postgres, files) == 0
+    with psycopg.connect(postgres, autocommit=True) as conn:
+        conn.execute("DELETE FROM access WHERE blog = 'B Blog'")
+    users = json.loads(files[0].read_text()) | {"new@example.org": "$argon2id$new"}
+    files[0].write_text(json.dumps(users))
+    assert _run_import(monkeypatch, postgres, files) == 0
+    assert _tables(postgres).access == [(TEST_USER, "A Blog")]

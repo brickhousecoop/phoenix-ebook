@@ -4,6 +4,8 @@ Users are an email address and an argon2id password hash. With ``PHOENIX_STORE_U
 set they're in the store (ADR 0004), and nothing else counts. Without it, they're a
 JSON object in ``PHOENIX_USERS`` or, failing that, in ``~/.phoenix_users.json``
 (maintained by ``scripts/add_user.py``). With none of these, nobody can sign in.
+
+Which blogs a user may build from is ``forms.blogs_for()`` (#41).
 """
 from __future__ import annotations
 
@@ -19,8 +21,6 @@ from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-
-from phoenix_ebook.models import SourceSpec
 
 from web import store
 
@@ -117,12 +117,6 @@ def user_from_cookie(value: str | None, now: float | None = None) -> str | None:
     if expires < (now or time.time()) or user not in (load_users() or {}):
         return None
     return user
-
-
-def may_build(user: str, source: SourceSpec) -> bool:
-    """Whether ``user`` may build books from ``source``. Every user may use every site the
-    website has a key for, for now; per-user sites would be decided here."""
-    return True
 
 
 def _sign(payload: str) -> str:

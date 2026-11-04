@@ -105,7 +105,8 @@ def read_keys(blogs: tuple[Blog, ...], keys_path: Path | None) -> tuple[dict[str
 
 
 def data_from_files(blogs: tuple[Blog, ...], users_path: Path, keys_path: Path | None, master_key: str) -> StoreData:
-    """What the first import loads. Current users get every blog. Raises ``StoreAdminError``
+    """What an import from the lists loads. Every user gets every blog, which only counts on the first
+    import: later ones keep the store's access (``access_to_keep``). Raises ``StoreAdminError``
     naming everything missing, before anything has touched the store."""
     users, users_problem = read_users(users_path)
     keys, missing = read_keys(blogs, keys_path)
@@ -180,6 +181,66 @@ def login_url(admin_url: str, login: str, password: str) -> str:
                               "postgresql://user:password@host/database. Nothing was written.")
     port = f":{parts.port}" if parts.port else ""
     return urlunsplit(parts._replace(netloc=f"{quote(login, safe="")}:{quote(password, safe="")}@{parts.hostname}{port}"))
+
+
+# ---------------------------------------------------------------- access (#41)
+
+def access_to_keep(conn: psycopg.Connection, data: StoreData) -> StoreData:
+    """``data`` with the store's own access rows in place of "everyone gets every blog", once the
+    store has users: an import from the lists then keeps each user's blogs, and users new to the
+    store start with none. The first import, into an empty store, keeps ``data`` as it is."""
+    if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return data
+    blog_names = {blog.name for blog, _ in data.blogs}
+    rows = conn.execute("SELECT email, blog FROM access ORDER BY email, blog").fetchall()
+    kept = [(email, blog) for email, blog in rows if email in data.users and blog in blog_names]
+    return StoreData(data.blogs, data.users, kept)
+
+
+def find_blog(conn: psycopg.Connection, text: str) -> str:
+    """The name of the blog ``text`` means: its name, one of its hosts, or the first part of its
+    API's host (``hellworld`` for ``https://hellworld.ghost.io``), ignoring case."""
+    wanted = text.strip().casefold()
+    rows = conn.execute("SELECT name, url, hosts FROM blogs ORDER BY name").fetchall()
+    for name, url, hosts in rows:
+        nicknames = {name.casefold(), (urlsplit(url).hostname or "").split(".")[0], *(h.casefold() for h in hosts)}
+        if wanted in nicknames:
+            return name
+    raise StoreAdminError(f"No blog called {text!r}. The blogs are: {', '.join(row[0] for row in rows) or 'none'}. "
+                          "Nothing was changed.")
+
+
+def _existing_user(conn: psycopg.Connection, email: str) -> str:
+    from web.auth import normalize
+    email = normalize(email)
+    if not conn.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
+        raise StoreAdminError(f"{email} isn't a user. Nothing was changed.")
+    return email
+
+
+def grant(conn: psycopg.Connection, email: str, blog: str) -> tuple[str, str, bool]:
+    """Let ``email`` build from ``blog``. Returns the user, the blog's name, and whether anything changed."""
+    email, name = _existing_user(conn, email), find_blog(conn, blog)
+    added = conn.execute("INSERT INTO access (email, blog) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                         (email, name)).rowcount
+    return email, name, bool(added)
+
+
+def revoke(conn: psycopg.Connection, email: str, blog: str) -> tuple[str, str, bool]:
+    """Stop ``email`` building from ``blog``; the website refuses them from their next request."""
+    email, name = _existing_user(conn, email), find_blog(conn, blog)
+    removed = conn.execute("DELETE FROM access WHERE email = %s AND blog = %s", (email, name)).rowcount
+    return email, name, bool(removed)
+
+
+def users_and_blogs(conn: psycopg.Connection) -> dict[str, list[str]]:
+    """Every user and the blogs they may build from, in order."""
+    rows = conn.execute("""SELECT u.email, a.blog FROM users u LEFT JOIN access a ON a.email = u.email
+                           ORDER BY u.email, a.blog""").fetchall()
+    users: dict[str, list[str]] = {}
+    for email, blog in rows:
+        users.setdefault(email, []).extend([blog] if blog else [])
+    return users
 
 
 # ---------------------------------------------------------------- export and restore

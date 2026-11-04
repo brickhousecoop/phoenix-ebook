@@ -53,6 +53,16 @@ def current_blogs() -> tuple[Blog, ...]:
     return connected.blogs() if connected else BLOGS
 
 
+def blogs_for(user: str) -> tuple[tuple[Blog, ...], tuple[Blog, ...]]:
+    """Every blog, and those ``user`` may build from (#41): with the store, the ones they've been
+    given; without it, all of them. Raises ``store.StoreUnavailable`` in an outage."""
+    connected = store.active()
+    if connected is None:
+        return BLOGS, BLOGS
+    blogs, usable = connected.blogs_and_access(user)
+    return blogs, tuple(blog for blog in blogs if blog.name in usable)
+
+
 MAX_POSTS = 100  # see ADR 0002: sized from measured build time against Vercel's function limit
 MAX_COVER_BYTES = 4_500_000  # Vercel functions can't return more than 4.5 MB (ADR 0002)
 
@@ -108,6 +118,7 @@ class CheckResult:
     spec: BookSpec | None
     errors: list[FormError] = dc_field(default_factory=list)
     posts: list[Post] = dc_field(default_factory=list)  # fetched while checking, in reading order
+    refused: Blog | None = None  # a blog the addresses came from that this user may not build from
 
     @property
     def ok(self) -> bool:
@@ -194,15 +205,23 @@ def _line_numbers(numbers: list[int]) -> str:
     return ("line " if len(numbers) == 1 else "lines ") + ", ".join(map(str, numbers))
 
 
-def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS) -> tuple[Blog | None, list[str], list[FormError]]:
+NO_BLOGS_YET = "your account can't build from any blog yet. Ask whoever runs this website to give you one"
+
+
+def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS, usable: tuple[Blog, ...] | None = None
+                     ) -> tuple[Blog | None, list[str], list[FormError], Blog | None]:
     """Resolve full addresses to their blog and slugs, in order; report what isn't a full address,
-    unknown sites, addresses from more than one blog, duplicates (with line numbers) and more
-    than ``MAX_POSTS`` posts. The blog is None unless exactly one was found."""
+    unknown sites, blogs not in ``usable`` (default: all of them), addresses from more than one blog,
+    duplicates (with line numbers) and more than ``MAX_POSTS`` posts. The blog is None unless
+    exactly one was found. The last item is a blog the user was refused, if any."""
+    usable = blogs if usable is None else usable
     lines = parse_post_addresses(raw_text)
-    if not lines:
-        return None, [], [FormError("posts", "add at least one post address")]
     if not blogs:
-        return None, [], [FormError("posts", "this website has no blogs set up yet. Ask whoever runs it")]
+        return None, [], [FormError("posts", "this website has no blogs set up yet. Ask whoever runs it")], None
+    if not usable:
+        return None, [], [FormError("posts", NO_BLOGS_YET)], None
+    if not lines:
+        return None, [], [FormError("posts", "add at least one post address")], None
 
     errors: list[FormError] = []
     seen: dict[str, int] = {}
@@ -211,11 +230,15 @@ def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS) -> tuple[Bl
     other_sites: list[int] = []
     duplicates: list[str] = []
     lines_by_blog: dict[Blog, list[int]] = {}
+    refused: dict[Blog, list[int]] = {}
 
     for lineno, address in lines:
         blog, slug, is_address = _blog_of(address, blogs)
         if blog is None:
             (other_sites if is_address else not_addresses).append(lineno)
+            continue
+        if blog not in usable:
+            refused.setdefault(blog, []).append(lineno)
             continue
         lines_by_blog.setdefault(blog, []).append(lineno)
         if slug in seen:
@@ -226,11 +249,15 @@ def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS) -> tuple[Bl
 
     if not_addresses:
         errors.append(FormError("posts", f"not a full post address: {_line_numbers(not_addresses)}. Paste the "
-                                         f"whole address, like https://{blogs[0].hosts[0]}/a-post/"))
+                                         f"whole address, like https://{usable[0].hosts[0]}/a-post/"))
+    names = " and ".join(blog.name for blog in usable)
     if other_sites:
-        names = " and ".join(blog.name for blog in blogs)
         errors.append(FormError("posts", f"from another site: {_line_numbers(other_sites)}. This website "
                                          f"only builds from {names}"))
+    for blog, numbers in refused.items():
+        errors.append(FormError("posts", f"your account can't build from {blog.name}: {_line_numbers(numbers)}. "
+                                         f"You can build from {names}. To use {blog.name}, ask whoever runs "
+                                         "this website"))
     if len(lines_by_blog) > 1:
         where = "; ".join(f"{blog.name}: {_line_numbers(numbers)}" for blog, numbers in lines_by_blog.items())
         errors.append(FormError("posts", f"a book comes from one blog, but these addresses are from more than "
@@ -240,7 +267,8 @@ def _check_post_list(raw_text: str, blogs: tuple[Blog, ...] = BLOGS) -> tuple[Bl
     if len(slugs) > MAX_POSTS:
         errors.append(FormError("posts", f"{len(slugs)} posts given; this website builds at most {MAX_POSTS} "
                                          "at a time"))
-    return next(iter(lines_by_blog)) if len(lines_by_blog) == 1 else None, slugs, errors
+    return (next(iter(lines_by_blog)) if len(lines_by_blog) == 1 else None, slugs, errors,
+            next(iter(refused), None))
 
 
 def _check_cover_bytes(data: bytes) -> list[FormError]:
@@ -328,19 +356,21 @@ def _build_spec(raw: RawForm, slugs: list[str], blog: Blog | None) -> tuple[Book
 
 def check_submission(raw: RawForm, session: requests.Session | None = None,
                      progress: Callable[[Progress], None] | None = None,
-                     blogs: tuple[Blog, ...] | None = None) -> CheckResult:
+                     blogs: tuple[Blog, ...] | None = None, usable: tuple[Blog, ...] | None = None) -> CheckResult:
     """Build a ``BookSpec`` from ``raw`` and run every pre-build check.
 
     Every problem is reported together in one pass, except that the live
     "does every post exist" check only runs once the post list itself is
     clean (a bad address list makes fetching meaningless). That check fetches
     the posts, so a clean result carries them, ready to build. ``blogs`` defaults to
-    ``current_blogs()``. The store's only other read is the blog's key, here too, so a build
-    that has passed these checks doesn't need the store again. An outage raises
-    ``store.StoreUnavailable``.
+    ``current_blogs()``, and ``usable`` (the blogs this user may build from) to all of them.
+    Addresses from a blog that isn't usable are refused here, before anything is fetched. The
+    store's only other read is the blog's key, here too, so a build that has passed these checks
+    doesn't need the store again. An outage raises ``store.StoreUnavailable``.
     """
     posts: list[Post] = []
-    blog, slugs, post_errors = _check_post_list(raw.posts, current_blogs() if blogs is None else blogs)
+    blog, slugs, post_errors, refused = _check_post_list(raw.posts, current_blogs() if blogs is None else blogs,
+                                                         usable)
     spec, spec_errors = _build_spec(raw, slugs, blog)
     errors = post_errors + spec_errors
 
@@ -368,4 +398,4 @@ def check_submission(raw: RawForm, session: requests.Session | None = None,
         except PhoenixError as exc:
             errors.append(FormError(exc.field, str(exc)))
 
-    return CheckResult(spec=spec, errors=errors, posts=posts)
+    return CheckResult(spec=spec, errors=errors, posts=posts, refused=refused)

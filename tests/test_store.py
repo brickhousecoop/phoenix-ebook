@@ -29,6 +29,7 @@ class FakeStore:
         self.user_list = {TEST_USER: json.loads(users_json())[TEST_USER]}
         self.blog_list = (BLOG,)
         self.keys = {BLOG.name: store.seal(KEY, BLOG, MASTER)}
+        self.access = {(TEST_USER, BLOG.name)}
         self.down = False
         self.down_after_key = False
 
@@ -43,6 +44,10 @@ class FakeStore:
     def blogs(self):
         self._check()
         return self.blog_list
+
+    def blogs_and_access(self, email):
+        self._check()
+        return self.blog_list, frozenset(blog for user, blog in self.access if user == email)
 
     def sealed_key(self, blog):
         self._check()
@@ -322,5 +327,68 @@ def test_the_library_has_no_database_dependency():
     assert "psycopg" not in requirements and "cryptography" not in requirements
 
 
-def test_may_build_still_says_yes(fake):
-    assert auth.may_build("anyone@example.org", None)
+
+
+# ---------------------------------------------------------------- access by blog (#41)
+
+def two_blogs(fake):
+    fake.blog_list = (BLOG, OTHER)
+    fake.keys[OTHER.name] = store.seal(KEY, OTHER, MASTER)
+
+
+def test_a_user_builds_from_their_blog(fake, monkeypatch):
+    two_blogs(fake)
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession(post_route()))
+    assert "Your book is ready" in web_client().post("/", data={"posts": "ablog.com/a", "title": "T"}).text
+
+
+def test_a_blog_the_user_wasnt_given_is_refused_before_anything_is_fetched(fake, monkeypatch, caplog):
+    two_blogs(fake)
+    session = FakeSession({})
+    monkeypatch.setattr(requests, "Session", lambda: session)
+    with caplog.at_level(logging.INFO, logger="web.activity"):
+        page = web_client().post("/", data={"posts": "other.com/a\nother.com/b", "title": "T"}).text
+    text = " ".join(page.replace("&#39;", "'").split())
+    assert "your account can't build from Other: lines 1, 2" in text
+    assert "You can build from A Blog" in text and "ask whoever runs this website" in text
+    assert session.calls == {}
+    assert f"build: user={TEST_USER} site={OTHER.url} posts=2 refused" in caplog.text
+
+
+def test_the_alt_text_rebuild_is_refused_the_same_way(fake, monkeypatch):
+    two_blogs(fake)
+    session = FakeSession({})
+    monkeypatch.setattr(requests, "Session", lambda: session)
+    page = web_client().post("/", data={"posts": "other.com/a", "title": "T", "fix_url_0": "https://other.com/i.png",
+                                        "fix_alt_0": "A picture", "fix_current_0": ""}).text
+    assert "build from Other" in page.replace("&#39;", "'")
+    assert session.calls == {}
+
+
+def test_the_form_names_only_the_users_blogs(fake):
+    two_blogs(fake)
+    page = " ".join(web_client().get("/").text.split())
+    assert "Turns a list of posts from A Blog into an EPUB" in page
+    assert "other.com/…" not in page and "Other" not in page
+
+
+def test_a_user_with_no_blogs_gets_a_message_not_a_form(fake):
+    fake.access = set()
+    page = web_client().get("/").text.replace("&#39;", "'")
+    assert "Your account can't build from any blog yet" in page
+    assert 'id="book-form"' not in page
+    posted = web_client().post("/", data={"posts": "ablog.com/a"}).text.replace("&#39;", "'")
+    assert "can't build from any blog yet" in posted
+
+
+def test_taking_a_blog_away_counts_on_the_next_request(fake, monkeypatch):
+    two_blogs(fake)
+    monkeypatch.setattr(requests, "Session", lambda: FakeSession(post_route()))
+    client = web_client()
+    fake.access = set()
+    assert "Your book is ready" not in client.post("/", data={"posts": "ablog.com/a", "title": "T"}).text
+
+
+def test_without_the_store_everyone_may_use_every_blog(monkeypatch):
+    monkeypatch.delenv(store.URL_ENV, raising=False)
+    assert forms.blogs_for("anyone@example.org") == (forms.BLOGS, forms.BLOGS)

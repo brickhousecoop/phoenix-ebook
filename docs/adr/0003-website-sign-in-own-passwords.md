@@ -1,6 +1,6 @@
 # Website sign-in: our own email-and-password sign-in, users in an environment variable
 
-*The sign-in stands. The user list moved to the store in [ADR 0004](0004-one-store-postgres-read-only-website.md).*
+*The sign-in stands. The user list moved to the store in [ADR 0004](0004-one-store-postgres-read-only-website.md). "Every user may build from any site" no longer holds with the store: each user builds only from the blogs they've been given (#41).*
 
 The website needs its own sign-in before it can go public (#34), because the Ghost key behind it reads paid posts and drafts. For version 1, only the Flaming Hydra team are **users**, and every user may build from any site the website has a key for. We decided that **the website checks an email address and password itself (argon2id hashes, a signed 30-day cookie), with the user list kept as JSON in a Sensitive Vercel environment variable (`PHOENIX_USERS`)**. On your own machine the list falls back to `~/.phoenix_users.json`, which `scripts/add_user.py` maintains. If neither exists, nobody can sign in. Sign-in lives only in `web/`, in front of the form → `BookSpec` → `build()` seam, so the library knows nothing about it.
 
