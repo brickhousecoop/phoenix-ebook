@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import stat
+from dataclasses import replace
 
 import psycopg
 import pytest
@@ -41,7 +42,7 @@ def files(tmp_path):
 
 def test_inputs_become_sealed_data_and_current_users_get_every_blog(files):
     data = store_admin.data_from_files(BLOGS, files[0], files[1], MASTER)
-    assert [blog for blog, _ in data.blogs] == list(BLOGS)
+    assert [blog for blog, _ in data.blogs] == [replace(BLOG_A, short_name="ablog"), replace(BLOG_B, short_name="bblog")]
     assert store.unseal(data.blogs[0][1], BLOG_A, MASTER) == "aaa:111"
     assert list(data.users) == [TEST_USER]
     assert data.access == [(TEST_USER, "A Blog"), (TEST_USER, "B Blog")]
@@ -207,7 +208,7 @@ def test_new_login_passwords_replace_the_old_ones(loaded):
 def test_re_running_makes_the_store_match_the_inputs(loaded):
     url, data, _ = loaded
     changed = store_admin.StoreData(
-        blogs=[(BLOG_A, store.seal("aaa:new", BLOG_A, MASTER))],
+        blogs=[(replace(BLOG_A, short_name="a"), store.seal("aaa:new", BLOG_A, MASTER))],
         users={"new@example.org": "$argon2id$new"},
         access=[("new@example.org", "A Blog")],
     )
@@ -276,7 +277,7 @@ def test_a_second_run_without_the_master_key_is_refused_and_changes_nothing(post
     before = _tables(postgres)
     capsys.readouterr()
     assert _run_import(monkeypatch, postgres, files) == 1
-    assert store.MASTER_KEY_ENV in capsys.readouterr().err
+    assert "already has users or blogs" in capsys.readouterr().err
     assert _tables(postgres) == before
 
 
@@ -333,7 +334,7 @@ def test_granting_twice_changes_nothing_and_makes_no_backup(loaded, tmp_path, mo
 
 
 @pytest.mark.parametrize("argv, says", [
-    (["grant", TEST_USER, "nope"], "No blog called 'nope'. The blogs are: A Blog, B Blog"),
+    (["grant", TEST_USER, "nope"], "No blog called 'nope'. The blogs are: A Blog (ablog), B Blog (bblog)"),
     (["revoke", "stranger@example.org", "ablog"], "stranger@example.org isn't a user"),
 ])
 def test_an_unknown_blog_or_user_is_named_and_nothing_changes(loaded, tmp_path, monkeypatch, capsys, argv, says):
@@ -354,12 +355,216 @@ def test_users_lists_each_users_blogs(loaded, tmp_path, monkeypatch, capsys):
     assert lines[1].split() == ["zed@example.org", "(no", "blogs)"]
 
 
-def test_re_importing_keeps_each_users_blogs_and_new_users_start_with_none(postgres, files, tmp_path, monkeypatch):
+def test_importing_the_lists_again_is_refused_even_with_the_master_key(postgres, files, monkeypatch, capsys):
+    """It would remove users and blogs added with the commands since (#40)."""
     monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
     assert _run_import(monkeypatch, postgres, files) == 0
     with psycopg.connect(postgres, autocommit=True) as conn:
-        conn.execute("DELETE FROM access WHERE blog = 'B Blog'")
-    users = json.loads(files[0].read_text()) | {"new@example.org": "$argon2id$new"}
-    files[0].write_text(json.dumps(users))
-    assert _run_import(monkeypatch, postgres, files) == 0
-    assert _tables(postgres).access == [(TEST_USER, "A Blog")]
+        conn.execute("INSERT INTO users VALUES ('added@example.org', '$argon2id$x')")
+    before = _tables(postgres)
+    capsys.readouterr()
+    assert _run_import(monkeypatch, postgres, files) == 1
+    assert "import --from-export" in capsys.readouterr().err
+    assert _tables(postgres) == before
+
+
+# ---------------------------------------------------------------- users and blogs (#40)
+
+def _password(out: str) -> str:
+    return out.split("privately):\n", 1)[1].split()[0]
+
+
+def _site(monkeypatch, logins):
+    monkeypatch.setenv(store.URL_ENV, logins[store_admin.SITE_LOGIN])
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+
+
+def test_user_add_then_grant_lets_them_sign_in_and_use_the_blog(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    _site(monkeypatch, logins)
+    _, code = _run(monkeypatch, url, tmp_path, "user", "add", " Ana@Example.org ")
+    out = capsys.readouterr().out
+    assert code == 0 and "can't build from any blog until you grant one" in out
+    password = _password(out)
+    assert auth.check_password("ana@example.org", password) == "ana@example.org"
+    assert forms.blogs_for("ana@example.org")[1] == ()
+    assert len(list((tmp_path / "backups").iterdir())) == 1
+
+    _run(monkeypatch, url, tmp_path, "grant", "ana@example.org", "ablog")
+    client = web_client(None)
+    signed_in = client.post("/sign-in", data={"email": "ana@example.org", "password": password},
+                            headers={"Origin": "http://testserver"}, follow_redirects=False)
+    assert signed_in.status_code == 303
+    page = " ".join(client.get("/").text.split())
+    assert "Turns a list of posts from A Blog into an EPUB" in page
+
+
+def test_adding_a_user_twice_is_refused(loaded, tmp_path, monkeypatch, capsys):
+    url, data, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "user", "add", TEST_USER)
+    assert code == 1 and "already a user" in capsys.readouterr().err
+    assert _tables(url) == data
+
+
+def test_new_password_replaces_the_old_one(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    _site(monkeypatch, logins)
+    _, code = _run(monkeypatch, url, tmp_path, "user", "new-password", TEST_USER)
+    password = _password(capsys.readouterr().out)
+    assert code == 0
+    assert auth.check_password(TEST_USER, TEST_PASSWORD) is None
+    assert auth.check_password(TEST_USER, password) == TEST_USER
+
+
+def test_user_remove_takes_their_blogs_too(loaded, tmp_path, monkeypatch, capsys):
+    url, _, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "user", "remove", TEST_USER)
+    assert code == 0 and "signed out at their next page" in capsys.readouterr().out
+    tables = _tables(url)
+    assert tables.users == {} and tables.access == []
+
+
+def _with_key(monkeypatch, key):
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": key if prompt.startswith("Key for") else "")
+
+
+def test_blog_add_stores_its_key_encrypted_and_nobody_has_it_yet(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    _site(monkeypatch, logins)
+    _with_key(monkeypatch, "ccc:333")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "add", "C Blog", "--url", "https://cblog.ghost.io/",
+                   "--hosts", "www.cblog.com, cblog.com")
+    out = capsys.readouterr().out
+    assert code == 0 and "ccc:333" not in out
+    c_blog = Blog("C Blog", "ghost", "https://cblog.ghost.io", ("www.cblog.com", "cblog.com"))
+    assert forms.blogs_for(TEST_USER) == ((BLOG_A, BLOG_B, c_blog), BLOGS)
+    assert store.blog_key(store.active(), c_blog) == "ccc:333"
+    backup = next((tmp_path / "backups").iterdir()).read_text()
+    assert "ccc:333" not in backup
+
+
+def test_blog_add_without_hosts_uses_the_api_host(loaded, tmp_path, monkeypatch):
+    url, _, _ = loaded
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    _with_key(monkeypatch, "ccc:333")
+    _run(monkeypatch, url, tmp_path, "blog", "add", "C Blog", "--url", "https://cblog.ghost.io")
+    assert _tables(url).blogs[-1][0].hosts == ("cblog.ghost.io",)
+
+
+@pytest.mark.parametrize("argv, says", [
+    (["--url", "https://new.ghost.io", "--hosts", "bblog.com"], "bblog.com already belongs to B Blog"),
+    (["--url", "https://bblog.ghost.io"], "B Blog already has that name or address"),
+    (["--url", "http://new.ghost.io"], "isn't an https address"),
+    (["--url", "https://new.ghost.io", "--platform", "myspace"], "unknown platform 'myspace'"),
+])
+def test_a_blog_that_clashes_or_is_malformed_is_refused(loaded, tmp_path, monkeypatch, capsys, argv, says):
+    url, data, _ = loaded
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    _with_key(monkeypatch, "ccc:333")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "add", "New", *argv)
+    assert code == 1 and says in capsys.readouterr().err
+    assert _tables(url) == data
+
+
+def test_a_different_master_key_is_refused(loaded, tmp_path, monkeypatch, capsys):
+    url, data, _ = loaded
+    monkeypatch.setenv(store.MASTER_KEY_ENV, store.new_master_key())
+    _with_key(monkeypatch, "ccc:333")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "set-key", "ablog")
+    assert code == 1 and "Use the one in your password manager" in capsys.readouterr().err
+    assert _tables(url) == data
+
+
+def test_set_key_replaces_the_key(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    _site(monkeypatch, logins)
+    _with_key(monkeypatch, "aaa:new")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "set-key", "ablog.com")
+    assert code == 0 and "aaa:new" not in capsys.readouterr().out
+    assert store.blog_key(store.active(), BLOG_A) == "aaa:new"
+
+
+def test_new_login_passwords_is_its_own_command(loaded, tmp_path, monkeypatch, capsys):
+    url, _, logins = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "new-login-passwords")
+    assert code == 0 and store_admin.SITE_LOGIN in capsys.readouterr().out
+    with pytest.raises(psycopg.OperationalError):
+        psycopg.connect(logins[store_admin.SITE_LOGIN])
+
+
+# ---------------------------------------------------------------- short names
+
+OLD_TABLES = """
+CREATE TABLE blogs (name text PRIMARY KEY, platform text NOT NULL, url text NOT NULL UNIQUE, hosts text[] NOT NULL,
+                    key_ciphertext bytea, key_master_id text);
+CREATE TABLE users (email text PRIMARY KEY, password_hash text NOT NULL);
+CREATE TABLE access (email text NOT NULL REFERENCES users ON DELETE CASCADE,
+                     blog text NOT NULL REFERENCES blogs ON DELETE CASCADE ON UPDATE CASCADE, PRIMARY KEY (email, blog));
+"""
+
+
+def test_a_store_from_before_short_names_gets_them_on_its_first_change(postgres, tmp_path, monkeypatch, capsys):
+    with psycopg.connect(postgres, autocommit=True) as conn:
+        conn.execute(OLD_TABLES)
+        conn.execute("INSERT INTO blogs VALUES ('Welcome to Hell World', 'ghost', 'https://hellworld.ghost.io', "
+                     "'{www.welcometohellworld.com}', NULL, NULL)")
+        conn.execute("INSERT INTO users VALUES (%s, '$argon2id$x')", (TEST_USER,))
+    _, code = _run(monkeypatch, postgres, tmp_path, "blog", "list")  # reading works before the upgrade
+    assert code == 0 and capsys.readouterr().out.startswith("-")
+    assert _run(monkeypatch, postgres, tmp_path, "export", "--to", str(tmp_path / "old.json"))[1] == 0
+    _, code = _run(monkeypatch, postgres, tmp_path, "grant", TEST_USER, "hellworld")
+    assert code == 0, capsys.readouterr().err
+    assert _tables(postgres).blogs[0][0].short_name == "hellworld"
+    assert _tables(postgres).access == [(TEST_USER, "Welcome to Hell World")]
+
+
+def test_blog_add_takes_a_short_name_and_grant_uses_it(loaded, tmp_path, monkeypatch, capsys):
+    url, _, _ = loaded
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    _with_key(monkeypatch, "ccc:333")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "add", "Defector", "--url", "https://lede-admin.defector.com",
+                   "--hosts", "defector.com", "--short-name", "Defector")
+    assert code == 0 and "(defector)" in capsys.readouterr().out
+    _, code = _run(monkeypatch, url, tmp_path, "grant", TEST_USER, "defector")
+    assert code == 0 and (TEST_USER, "Defector") in _tables(url).access
+
+
+@pytest.mark.parametrize("short_name, says", [("bblog", "B Blog already has the short name bblog"),
+                                              ("no spaces", "can't be a short name")])
+def test_a_taken_or_malformed_short_name_is_refused(loaded, tmp_path, monkeypatch, capsys, short_name, says):
+    url, data, _ = loaded
+    monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)
+    _with_key(monkeypatch, "ccc:333")
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "add", "New", "--url", "https://new.ghost.io",
+                   "--short-name", short_name)
+    assert code == 1 and says in capsys.readouterr().err
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "short-name", "ablog", short_name)
+    assert code == 1 and says in capsys.readouterr().err
+    assert _tables(url) == data
+
+
+def test_changing_a_short_name(loaded, tmp_path, monkeypatch, capsys):
+    url, _, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "short-name", "ablog", "first")
+    assert code == 0 and "A Blog is now first" in capsys.readouterr().out
+    _, code = _run(monkeypatch, url, tmp_path, "revoke", TEST_USER, "first")
+    assert code == 0
+    _, code = _run(monkeypatch, url, tmp_path, "revoke", TEST_USER, "ablog")
+    assert code == 1 and "No blog called 'ablog'" in capsys.readouterr().err
+
+
+def test_blog_list_shows_short_names_hosts_and_whether_a_key_is_stored(loaded, tmp_path, monkeypatch, capsys):
+    url, _, _ = loaded
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "list")
+    lines = capsys.readouterr().out.splitlines()
+    assert code == 0
+    assert lines[0].split() == ["ablog", "A", "Blog", "(ablog.com,", "ablog.ghost.io;", "key:", "stored)"]
+
+
+def test_an_export_from_before_short_names_still_restores(loaded):
+    url, data, _ = loaded
+    raw = json.loads(store_admin.to_export(data))
+    assert raw["blogs"][0]["short_name"] == "ablog"
+    for blog in raw["blogs"]:
+        del blog["short_name"]
+    assert store_admin.from_export(json.dumps(raw)) == data

@@ -48,6 +48,7 @@ class Blog:
     platform: str
     url: str  # where its platform's API is
     hosts: tuple[str, ...]  # exact hosts its post addresses may use; the public one first
+    short_name: str = ""  # what the scripts call it, like hellworld; the website doesn't read it
 
 
 @dataclass(frozen=True)

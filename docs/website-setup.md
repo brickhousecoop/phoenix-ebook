@@ -79,7 +79,7 @@ Blogs, their keys, users and their access can live in one Postgres database ([AD
    .venv/bin/python scripts/store_admin.py import
    ```
 
-   It asks for the connection, without showing what you type. It reads `~/.phoenix_users.json` and the keys wherever this computer keeps them; `--users-file` and `--keys-file` name other files. The blogs come from `BLOGS` in the code. On the first import every user gets every blog; after that, users keep the blogs they have and new users start with none. If anything is missing it says what, and writes nothing.
+   It asks for the connection, without showing what you type. It reads `~/.phoenix_users.json` and the keys wherever this computer keeps them; `--users-file` and `--keys-file` name other files. The blogs come from `BLOGS` in the code, and every user gets every blog. If anything is missing it says what, and writes nothing. This only works once, into an empty store: after that, the commands below change it.
 
    It **shows these only once**, so keep the output until they're stored:
    - **the master key:** put it in your password manager;
@@ -102,11 +102,29 @@ With the store, each user builds only from the blogs they've been given (#41). T
 .venv/bin/python scripts/store_admin.py revoke ana@example.org hellworld     # and stop her
 ```
 
-A blog can be named by its name, one of its addresses' hosts (`www.welcometohellworld.com`) or the first part of its API's host (`hellworld`, `flaminghydra`). A change counts from the user's next page, with no redeploy, and each one is exported straight away to `~/.phoenix_store_backups/`. Adding a user with `scripts/add_user.py` and running the import gives them no blogs until you grant one.
+A blog can be named by its short name (`hellworld`, `flaminghydra`), its name or one of its addresses' hosts (`www.welcometohellworld.com`). `blog list` shows them. A change counts from the user's next page, with no redeploy, and each one is exported straight away to `~/.phoenix_store_backups/`.
 
-### Changing things
+### Users, blogs and keys
 
-Until #40 adds the rest of the commands, edit your lists and run the import again, with `PHOENIX_STORE_MASTER_KEY` set in your shell. It makes the store match its inputs, **removing whatever they don't list**, and it takes effect on the next request, with no redeploy. It runs in one transaction: all of it happens, or none. `--new-login-passwords` replaces the read-only passwords, if you've lost them, and shows the new ones; the website's then has to change in Vercel.
+Every change takes effect on the next page, with no redeploy, and is exported straight away to `~/.phoenix_store_backups/`. Each command runs in one transaction: all of it happens, or none.
+
+```bash
+.venv/bin/python scripts/store_admin.py user add ana@example.org             # prints her password once; no blogs yet
+.venv/bin/python scripts/store_admin.py user new-password ana@example.org    # the old one stops working
+.venv/bin/python scripts/store_admin.py user remove ana@example.org          # signed out at her next page
+.venv/bin/python scripts/store_admin.py blog add "Welcome to Hell World" --url https://hellworld.ghost.io \
+    --hosts www.welcometohellworld.com,welcometohellworld.com,hellworld.ghost.io   # asks for the key
+.venv/bin/python scripts/store_admin.py blog set-key hellworld               # replace a key; asks for it
+.venv/bin/python scripts/store_admin.py blog list                            # short names, hosts, keys stored
+.venv/bin/python scripts/store_admin.py blog short-name hellworld hell       # change what the commands call it
+.venv/bin/python scripts/store_admin.py new-login-passwords                  # if the read-only ones are lost
+```
+
+Passwords are generated, never chosen: send each to its person privately. Nobody can change or reset their own; ask whoever manages users. A blog's short name is what these commands call it. `blog add` takes one with `--short-name`, or uses the first part of the `--url` host (`hellworld` for `https://hellworld.ghost.io`), which is an odd name for a blog whose API isn't on its own subdomain. Blogs added before short names existed get that default the first time any command changes the store. `blog add` and `blog set-key` need the master key (`PHOENIX_STORE_MASTER_KEY`, or asked for), and refuse one that isn't the store's. Keys are never shown or logged. A new blog's cleanup rules come from `phoenix_ebook/sites/` by its address, as before; without a file it gets the defaults. After `new-login-passwords`, replace `PHOENIX_STORE_URL` in Vercel and redeploy.
+
+To set the full-access connection once per terminal window instead of pasting it each time: `read -rs PHOENIX_STORE_ADMIN_URL && export PHOENIX_STORE_ADMIN_URL`. The same works for `PHOENIX_STORE_MASTER_KEY`.
+
+`import` refuses a store that already has users or blogs, because it would remove whatever was added since. `import --from-export` still restores a backup over everything.
 
 ### Backups
 
@@ -127,7 +145,9 @@ The export can use either connection. It's readable only by you, and the blog ke
 
 ## Users
 
-Without [the store](#the-store), the site's users are an email address and a password each. The passwords are generated, never chosen, and only their argon2id hashes are kept, in two environment variables (**Settings → Environment Variables**, both **Sensitive**, for **Production** and **Preview**):
+With [the store](#the-store), manage users with `scripts/store_admin.py` (see [Users, blogs and keys](#users-blogs-and-keys)); the rest of this section is for the site without one.
+
+Without the store, the site's users are an email address and a password each. The passwords are generated, never chosen, and only their argon2id hashes are kept, in two environment variables (**Settings → Environment Variables**, both **Sensitive**, for **Production** and **Preview**):
 
 - **`PHOENIX_USERS`**: the list of users, as JSON (`{"ana@example.org": "$argon2id$…"}`). Without it, or if it isn't valid JSON, nobody can sign in, and the sign-in page says so.
 - **`PHOENIX_SESSION_SECRET`**: signs the cookie that keeps people signed in for 30 days. Any long random value, e.g. from `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Changing it signs everyone out. Without it on Vercel, nobody can sign in.

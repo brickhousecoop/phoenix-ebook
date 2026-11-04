@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Add, reset or remove a website user (ADR 0003), and print the PHOENIX_USERS value for Vercel."""
+"""Add, reset or remove a website user (ADR 0003), and print the PHOENIX_USERS value for Vercel.
+
+For a site without the store. With the store (PHOENIX_STORE_URL), use scripts/store_admin.py user add instead."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +19,8 @@ EPILOG = f"""\
 The live site reads its users from the {auth.USERS_ENV} environment variable on Vercel, which
 holds the real list; ~/.phoenix_users.json is a copy kept on this machine. If two people
 manage users from different machines, pasting one copy can undo the other's changes.
-This script never contacts Vercel."""
+This script never contacts Vercel. A site connected to the store ignores this list: use
+scripts/store_admin.py user add/remove/new-password there."""
 
 
 def main(argv: list[str] | None = None) -> int:

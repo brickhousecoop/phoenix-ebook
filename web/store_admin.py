@@ -9,8 +9,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -40,6 +41,10 @@ CREATE TABLE IF NOT EXISTS users (
     email text PRIMARY KEY,
     password_hash text NOT NULL
 );
+-- Added after the first import (#40); filled from the API host for blogs that had none.
+ALTER TABLE blogs ADD COLUMN IF NOT EXISTS short_name text;
+UPDATE blogs SET short_name = split_part(split_part(url, '://', 2), '.', 1) WHERE short_name IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS blogs_short_name ON blogs (lower(short_name));
 CREATE TABLE IF NOT EXISTS access (
     email text NOT NULL REFERENCES users ON DELETE CASCADE,
     blog text NOT NULL REFERENCES blogs ON DELETE CASCADE ON UPDATE CASCADE,
@@ -104,9 +109,20 @@ def read_keys(blogs: tuple[Blog, ...], keys_path: Path | None) -> tuple[dict[str
     return keys, missing
 
 
+SHORT_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
+
+
+def default_short_name(url: str) -> str:
+    """The first part of a blog's API host: ``hellworld`` for ``https://hellworld.ghost.io``."""
+    return (urlsplit(url).hostname or "").split(".")[0]
+
+
+def _with_short_name(blog: Blog) -> Blog:
+    return blog if blog.short_name else replace(blog, short_name=default_short_name(blog.url))
+
+
 def data_from_files(blogs: tuple[Blog, ...], users_path: Path, keys_path: Path | None, master_key: str) -> StoreData:
-    """What an import from the lists loads. Every user gets every blog, which only counts on the first
-    import: later ones keep the store's access (``access_to_keep``). Raises ``StoreAdminError``
+    """What the first import loads, into an empty store: every user gets every blog. Raises ``StoreAdminError``
     naming everything missing, before anything has touched the store."""
     users, users_problem = read_users(users_path)
     keys, missing = read_keys(blogs, keys_path)
@@ -115,7 +131,7 @@ def data_from_files(blogs: tuple[Blog, ...], users_path: Path, keys_path: Path |
     if missing:
         raise StoreAdminError("Nothing was written. Missing:\n  " + "\n  ".join(missing))
     return StoreData(
-        blogs=[(blog, seal(keys[blog.name], blog, master_key)) for blog in blogs],
+        blogs=[(_with_short_name(blog), seal(keys[blog.name], blog, master_key)) for blog in blogs],
         users=users,
         access=[(email, blog.name) for email in users for blog in blogs],
     )
@@ -140,12 +156,12 @@ def load(conn: psycopg.Connection, data: StoreData) -> None:
     conn.execute("DELETE FROM blogs WHERE NOT (name = ANY(%s))", ([blog.name for blog, _ in data.blogs],))
     for blog, sealed in data.blogs:
         conn.execute(
-            """INSERT INTO blogs (name, platform, url, hosts, key_ciphertext, key_master_id)
-               VALUES (%s, %s, %s, %s, %s, %s)
+            """INSERT INTO blogs (name, platform, url, hosts, short_name, key_ciphertext, key_master_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (name) DO UPDATE SET platform = EXCLUDED.platform, url = EXCLUDED.url,
-                 hosts = EXCLUDED.hosts, key_ciphertext = EXCLUDED.key_ciphertext,
-                 key_master_id = EXCLUDED.key_master_id""",
-            (blog.name, blog.platform, blog.url, list(blog.hosts),
+                 hosts = EXCLUDED.hosts, short_name = EXCLUDED.short_name,
+                 key_ciphertext = EXCLUDED.key_ciphertext, key_master_id = EXCLUDED.key_master_id""",
+            (blog.name, blog.platform, blog.url, list(blog.hosts), _with_short_name(blog).short_name,
              sealed.ciphertext if sealed else None, sealed.master_id if sealed else None))
     for email, password_hash in data.users.items():
         conn.execute(
@@ -185,28 +201,16 @@ def login_url(admin_url: str, login: str, password: str) -> str:
 
 # ---------------------------------------------------------------- access (#41)
 
-def access_to_keep(conn: psycopg.Connection, data: StoreData) -> StoreData:
-    """``data`` with the store's own access rows in place of "everyone gets every blog", once the
-    store has users: an import from the lists then keeps each user's blogs, and users new to the
-    store start with none. The first import, into an empty store, keeps ``data`` as it is."""
-    if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
-        return data
-    blog_names = {blog.name for blog, _ in data.blogs}
-    rows = conn.execute("SELECT email, blog FROM access ORDER BY email, blog").fetchall()
-    kept = [(email, blog) for email, blog in rows if email in data.users and blog in blog_names]
-    return StoreData(data.blogs, data.users, kept)
-
-
 def find_blog(conn: psycopg.Connection, text: str) -> str:
-    """The name of the blog ``text`` means: its name, one of its hosts, or the first part of its
-    API's host (``hellworld`` for ``https://hellworld.ghost.io``), ignoring case."""
+    """The name of the blog ``text`` means: its short name, its name or one of its hosts, ignoring case."""
     wanted = text.strip().casefold()
-    rows = conn.execute("SELECT name, url, hosts FROM blogs ORDER BY name").fetchall()
-    for name, url, hosts in rows:
-        nicknames = {name.casefold(), (urlsplit(url).hostname or "").split(".")[0], *(h.casefold() for h in hosts)}
+    rows = conn.execute("SELECT name, to_jsonb(blogs) ->> 'short_name', hosts FROM blogs ORDER BY name").fetchall()
+    for name, short_name, hosts in rows:
+        nicknames = {name.casefold(), (short_name or "").casefold(), *(h.casefold() for h in hosts)}
         if wanted in nicknames:
             return name
-    raise StoreAdminError(f"No blog called {text!r}. The blogs are: {', '.join(row[0] for row in rows) or 'none'}. "
+    listed = ", ".join(f"{name} ({short_name})" for name, short_name, _ in rows) or "none"
+    raise StoreAdminError(f"No blog called {text!r}. The blogs are: {listed}. "
                           "Nothing was changed.")
 
 
@@ -233,6 +237,116 @@ def revoke(conn: psycopg.Connection, email: str, blog: str) -> tuple[str, str, b
     return email, name, bool(removed)
 
 
+def is_empty(conn: psycopg.Connection) -> bool:
+    """Whether the store has no users and no blogs yet: the only time an import from the lists may run."""
+    return not conn.execute("SELECT 1 FROM users UNION ALL SELECT 1 FROM blogs LIMIT 1").fetchone()
+
+
+# ---------------------------------------------------------------- users and blogs (#40)
+
+def _new_password() -> tuple[str, str]:
+    from web.auth import hash_password
+    password = secrets.token_urlsafe(18)
+    return password, hash_password(password)
+
+
+def add_user(conn: psycopg.Connection, email: str) -> tuple[str, str]:
+    """Add a user with no blogs. Returns their address as stored and their generated password,
+    which nothing keeps: show it once."""
+    from web.auth import normalize
+    email = normalize(email)
+    if "@" not in email or any(ch.isspace() for ch in email):
+        raise StoreAdminError(f"{email!r} isn't an email address. Nothing was changed.")
+    password, hashed = _new_password()
+    if not conn.execute("INSERT INTO users (email, password_hash) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (email, hashed)).rowcount:
+        raise StoreAdminError(f"{email} is already a user. To give them a new password, use user new-password. "
+                              "Nothing was changed.")
+    return email, password
+
+
+def new_password(conn: psycopg.Connection, email: str) -> tuple[str, str]:
+    """Give a user a new generated password; the old one stops working at once."""
+    email = _existing_user(conn, email)
+    password, hashed = _new_password()
+    conn.execute("UPDATE users SET password_hash = %s WHERE email = %s", (hashed, email))
+    return email, password
+
+
+def remove_user(conn: psycopg.Connection, email: str) -> str:
+    """Remove a user and their access; they're signed out at their next page."""
+    email = _existing_user(conn, email)
+    conn.execute("DELETE FROM users WHERE email = %s", (email,))
+    return email
+
+
+def check_master_key(conn: psycopg.Connection, master_key: str) -> None:
+    """Refuse a master key other than the one that encrypted the keys already stored."""
+    master_id, _, _ = master_key.strip().partition(".")
+    if (stored := master_key_ids(conn)) and stored != {master_id}:
+        raise StoreAdminError(f"The store's keys were encrypted with master key {', '.join(sorted(stored))}, but this "
+                              f"one is {master_id}. Use the one in your password manager. Nothing was changed.")
+
+
+def add_blog(conn: psycopg.Connection, blog: Blog, key: str, master_key: str) -> None:
+    """Add ``blog`` with its key, encrypted. Nobody can build from it until they're granted it."""
+    from phoenix_ebook.platforms.base import get_platform
+    get_platform(blog.platform)  # an unknown platform stops here, naming the known ones
+    parts = urlsplit(blog.url)
+    if parts.scheme != "https" or not parts.hostname:
+        raise StoreAdminError(f"{blog.url!r} isn't an https address like https://name.ghost.io. Nothing was changed.")
+    if not blog.hosts or any("/" in host or not host for host in blog.hosts):
+        raise StoreAdminError("Give the blog's hosts as plain names, like www.example.com. Nothing was changed.")
+    if not key.strip():
+        raise StoreAdminError(f"{blog.name} needs a key. Nothing was changed.")
+    blog = _with_short_name(blog)
+    check_master_key(conn, master_key)
+    for name, url, hosts in conn.execute("SELECT name, url, hosts FROM blogs").fetchall():
+        if name.casefold() == blog.name.casefold() or url == blog.url:
+            raise StoreAdminError(f"{name} already has that name or address. Nothing was changed.")
+        if shared := set(hosts) & set(blog.hosts):
+            raise StoreAdminError(f"{', '.join(sorted(shared))} already belongs to {name}. Nothing was changed.")
+    _check_short_name(conn, blog.short_name)
+    sealed = seal(key.strip(), blog, master_key)
+    conn.execute("""INSERT INTO blogs (name, platform, url, hosts, short_name, key_ciphertext, key_master_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                 (blog.name, blog.platform, blog.url, list(blog.hosts), blog.short_name, sealed.ciphertext,
+                  sealed.master_id))
+
+
+def _check_short_name(conn: psycopg.Connection, short_name: str, except_blog: str | None = None) -> None:
+    if not SHORT_NAME.fullmatch(short_name):
+        raise StoreAdminError(f"{short_name!r} can't be a short name: use lowercase letters, digits and hyphens, "
+                              "like hellworld. Nothing was changed.")
+    taken = conn.execute("SELECT name FROM blogs WHERE lower(short_name) = %s AND name IS DISTINCT FROM %s",
+                         (short_name, except_blog)).fetchone()
+    if taken:
+        raise StoreAdminError(f"{taken[0]} already has the short name {short_name}. Nothing was changed.")
+
+
+def set_short_name(conn: psycopg.Connection, blog: str, short_name: str) -> tuple[str, bool]:
+    """Change what the scripts call a blog. Returns its name and whether anything changed."""
+    name = find_blog(conn, blog)
+    short_name = short_name.strip().lower()
+    _check_short_name(conn, short_name, except_blog=name)
+    changed = conn.execute("UPDATE blogs SET short_name = %s WHERE name = %s AND short_name IS DISTINCT FROM %s",
+                           (short_name, name, short_name)).rowcount
+    return name, bool(changed)
+
+
+def set_key(conn: psycopg.Connection, blog: str, key: str, master_key: str) -> str:
+    """Replace a blog's key; the website uses the new one from the next build."""
+    name = find_blog(conn, blog)
+    if not key.strip():
+        raise StoreAdminError(f"{name} needs a key. Nothing was changed.")
+    check_master_key(conn, master_key)
+    platform, url, hosts = conn.execute("SELECT platform, url, hosts FROM blogs WHERE name = %s", (name,)).fetchone()
+    sealed = seal(key.strip(), Blog(name, platform, url, tuple(hosts)), master_key)
+    conn.execute("UPDATE blogs SET key_ciphertext = %s, key_master_id = %s WHERE name = %s",
+                 (sealed.ciphertext, sealed.master_id, name))
+    return name
+
+
 def users_and_blogs(conn: psycopg.Connection) -> dict[str, list[str]]:
     """Every user and the blogs they may build from, in order."""
     rows = conn.execute("""SELECT u.email, a.blog FROM users u LEFT JOIN access a ON a.email = u.email
@@ -246,9 +360,12 @@ def users_and_blogs(conn: psycopg.Connection) -> dict[str, list[str]]:
 # ---------------------------------------------------------------- export and restore
 
 def read_all(conn: psycopg.Connection) -> StoreData:
-    blogs = [(Blog(name, platform, url, tuple(hosts)), SealedKey(bytes(ciphertext), master_id) if ciphertext else None)
-             for name, platform, url, hosts, ciphertext, master_id in conn.execute(
-                 "SELECT name, platform, url, hosts, key_ciphertext, key_master_id FROM blogs ORDER BY name")]
+    blogs = [(Blog(name, platform, url, tuple(hosts), short_name or ""),
+              SealedKey(bytes(ciphertext), master_id) if ciphertext else None)
+             for name, platform, url, hosts, short_name, ciphertext, master_id in conn.execute(
+                 # to_jsonb: works on a store from before short names too, even through a read-only login
+                 "SELECT name, platform, url, hosts, to_jsonb(blogs) ->> 'short_name', key_ciphertext, key_master_id "
+                 "FROM blogs ORDER BY name")]
     users = dict(conn.execute("SELECT email, password_hash FROM users ORDER BY email").fetchall())
     access = [tuple(row) for row in conn.execute("SELECT email, blog FROM access ORDER BY email, blog").fetchall()]
     return StoreData(blogs, users, access)
@@ -260,6 +377,7 @@ def to_export(data: StoreData) -> str:
         "version": EXPORT_VERSION,
         "blogs": [{
             "name": blog.name, "platform": blog.platform, "url": blog.url, "hosts": list(blog.hosts),
+            "short_name": blog.short_name,
             "key_ciphertext": base64.b64encode(sealed.ciphertext).decode() if sealed else None,
             "key_master_id": sealed.master_id if sealed else None,
         } for blog, sealed in data.blogs],
@@ -276,7 +394,7 @@ def from_export(text: str) -> StoreData:
             raise StoreAdminError(f"This export has version {raw['version']}; this script reads {EXPORT_VERSION}. "
                                   "Nothing was written.")
         return StoreData(
-            blogs=[(Blog(b["name"], b["platform"], b["url"], tuple(b["hosts"])),
+            blogs=[(_with_short_name(Blog(b["name"], b["platform"], b["url"], tuple(b["hosts"]), b.get("short_name") or "")),
                     SealedKey(base64.b64decode(b["key_ciphertext"]), b["key_master_id"]) if b["key_ciphertext"] else None)
                    for b in raw["blogs"]],
             users=dict(raw["users"]),
