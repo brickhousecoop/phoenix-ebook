@@ -1,4 +1,4 @@
-"""The website's store, with a fake in place of Postgres (#31, ADR 0004)."""
+"""The website's store, with a fake in place of Postgres (#31, ADR 0004), and access by blog (#41)."""
 from __future__ import annotations
 
 import ast

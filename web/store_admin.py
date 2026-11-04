@@ -1,7 +1,8 @@
-"""Writing to the store: its tables, its logins, loading data and exporting it (ADR 0004).
+"""Writing to the store: its tables and logins, the first import, users, blogs, keys and access,
+and exporting it (ADR 0004, #40, #41).
 
 Used by ``scripts/store_admin.py`` on the maintainer's own machine, with the full-access
-connection. The website never imports this. ``StoreData`` is both what gets loaded and what an
+connection; an admin page (#42) would call the same functions. The website never imports this. ``StoreData`` is both what gets loaded and what an
 export file holds, so restoring a backup and the first import are the same operation.
 """
 from __future__ import annotations
@@ -140,6 +141,8 @@ def data_from_files(blogs: tuple[Blog, ...], users_path: Path, keys_path: Path |
 # ---------------------------------------------------------------- writing
 
 def create_tables(conn: psycopg.Connection) -> None:
+    """Create the tables, and add anything later versions need (such as short names). Safe to run
+    on every change; it only ever adds, so older website code keeps working (ADR 0004)."""
     conn.execute(_TABLES)
 
 

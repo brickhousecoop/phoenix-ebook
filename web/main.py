@@ -1,5 +1,8 @@
 """The book-building website: form, checks, build with live progress, results (ADR 0002).
 
+Every page but sign-in needs a signed-in user (ADR 0003), and names and accepts only the blogs
+that user may build from (#41). ``/jobs/delete-expired-books`` is for Vercel Cron alone (#33).
+
 Run locally with ``uvicorn web.main:app --reload`` from the repo root.
 """
 from __future__ import annotations

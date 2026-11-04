@@ -1,5 +1,6 @@
-"""Loading and backing up the store (#31, ADR 0004). The first part needs no database; the second
-uses a real Postgres on this machine and skips without one (see ``postgres_server`` in conftest)."""
+"""Loading, backing up and managing the store (#31, #40, #41, ADR 0004). The first part needs no
+database; the rest uses a real Postgres on this machine and skips without one (see
+``postgres_server`` in conftest)."""
 from __future__ import annotations
 
 import importlib.util
