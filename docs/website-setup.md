@@ -117,6 +117,8 @@ Every change takes effect on the next page, with no redeploy, and is exported st
 .venv/bin/python scripts/store_admin.py blog add "Welcome to Hell World" --url https://hellworld.ghost.io \
     --hosts www.welcometohellworld.com,welcometohellworld.com,hellworld.ghost.io   # asks for the key
 .venv/bin/python scripts/store_admin.py blog set-key hellworld               # replace a key; asks for it
+.venv/bin/python scripts/store_admin.py blog add Defector --platform wordpress-feed --url https://defector.com \
+    --hosts defector.com,www.defector.com --short-name defector       # the "key" is the private feed address
 .venv/bin/python scripts/store_admin.py blog list                            # short names, hosts, keys stored
 .venv/bin/python scripts/store_admin.py blog short-name hellworld hell       # change what the commands call it
 .venv/bin/python scripts/store_admin.py new-login-passwords                  # if the read-only ones are lost

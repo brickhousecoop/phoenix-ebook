@@ -28,6 +28,9 @@ LABELS = {
     "link-unlinked": "Broken link",
     "link-empty-removed": "Empty link removed",
     "content-image-left-out": "Images left out of a content page",
+    "post-left-out": "Post left out",
+    "dates-in-utc": "Dates in UTC",
+    "markup-unknown": "Unrecognised markup",
 }
 
 

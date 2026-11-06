@@ -1,6 +1,6 @@
 # phoenix-ebook
 
-Ghost→EPUB builder. Name it "phoenix-ebook" in prose — it is one module of a larger Phoenix project, not "Phoenix" itself. Currently targets `flaminghydra.ghost.io`. Trajectory:
+Ghost/WordPress→EPUB builder. Name it "phoenix-ebook" in prose — it is one module of a larger Phoenix project, not "Phoenix" itself. Currently targets Flaming Hydra and Welcome to Hell World (Ghost) and Defector (WordPress full-text feed). Trajectory:
 1. Add more source platforms.
 2. Add more site-specific HTML quirks via per-site processors.
 3. A web UI that drives the library (not just a CLI): live at ebookmaker.phoenixbook.services (phoenix-ebook.vercel.app redirects there), see `docs/website-setup.md`.
@@ -16,7 +16,8 @@ phoenix_ebook/
 ├── secrets.py                  # SecretStore keyed by (platform, domain)
 ├── platforms/
 │   ├── base.py                 # Platform ABC (+ normalize_html, canonical_image_url, default_processor) + registry
-│   └── ghost.py                # GhostPlatform (JWT + Admin API)
+│   ├── ghost.py                # GhostPlatform (JWT + Admin API)
+│   └── wordpress_feed.py       # WordPressFeedPlatform (private full-text RSS feed; the feed address is the secret)
 ├── processors/
 │   ├── base.py                 # HtmlProcessor (generic web cleanup in clean(), then apply_rules()) + select_processor
 │   ├── rules.py                # shared cleanup rules, and reading the files in sites/

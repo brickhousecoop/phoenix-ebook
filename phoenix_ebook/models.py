@@ -27,6 +27,7 @@ class Post:
     feature_image: str | None = None  # lead image URL, shown above the post body
     feature_image_alt: str | None = None
     feature_image_caption: str | None = None  # HTML
+    categories: list[str] = field(default_factory=list)  # the platform's categories and tags, as named there
     raw: dict[str, Any] = field(default_factory=dict)
 
 

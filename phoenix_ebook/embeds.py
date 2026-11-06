@@ -1,4 +1,4 @@
-"""Third-party embeds (YouTube, Vimeo, Spotify, X, TikTok, Bluesky, forms) -> canonical link cards.
+"""Third-party embeds (YouTube, Vimeo, Spotify, X, TikTok, Bluesky, Instagram, forms) -> canonical link cards.
 
 Recognising an embed is about the provider, not the platform: Ghost (and any
 future platform) finds the ``<iframe>`` or quote in its own markup and hands it
@@ -151,6 +151,8 @@ def social_card(soup: BeautifulSoup, blockquote: Tag) -> Tag | None:
         return _tiktok(soup, blockquote)
     if "bluesky-embed" in classes:
         return _bluesky(soup, blockquote)
+    if "instagram-media" in classes and blockquote.get("data-instgrm-permalink"):
+        return _instagram(soup, blockquote)
     return None
 
 
@@ -245,6 +247,15 @@ def _tiktok(soup, blockquote: Tag) -> Tag:
         source.append(_a(soup, video, "watch on TikTok"))
     return link_card(soup, "video", "Video on TikTok", quote_=_paragraphs(soup, body), source=source,
                      thumbnail_lookup=f"https://www.tiktok.com/oembed?url={quote(video, safe='')}" if video else None)
+
+
+def _instagram(soup, blockquote: Tag) -> Tag:
+    """Instagram's embed code holds no text of the post, only who shared it: a link to the post."""
+    page = _strip_query(blockquote["data-instgrm-permalink"])
+    shared = next((m.group(1) for p in blockquote.find_all("p")
+                   if (m := re.match(r"A post shared by (.+)", " ".join(p.get_text(" ", strip=True).split())))), None)
+    return link_card(soup, "post", "Post on Instagram", href=page, title="View the post on Instagram",
+                     source=[shared] if shared else ["Instagram"])
 
 
 def _paragraphs(soup, body: Tag | None) -> list[Tag]:

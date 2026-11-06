@@ -164,7 +164,7 @@ def _report_problems(problems) -> None:
     for p in problems:
         where = f"[{p.post_slug}] {p.location}: " if p.location else (f"[{p.post_slug}] " if p.post_slug else "")
         caption = f' (caption: "{p.caption}")' if p.caption else ""
-        print(f"warning: {where}{p.url}: {p.detail}{caption}", file=sys.stderr)
+        print(f"warning: {where}{p.url + ': ' if p.url else ''}{p.detail}{caption}", file=sys.stderr)
 
     def count(kind):
         return sum(p.kind == kind for p in problems)
@@ -199,6 +199,15 @@ def _report_problems(problems) -> None:
     if n := count("content-image-left-out"):
         print(f"{n} {plural(n, 'content file had images', 'content files had images')} that "
               f"{plural(n, 'was', 'were')} left out; see warnings above", file=sys.stderr)
+    if n := count("post-left-out"):
+        print(f"{n} {plural(n, 'post was', 'posts were')} left out: they're in categories this blog leaves out of "
+              "books; see warnings above", file=sys.stderr)
+    if n := count("dates-in-utc"):
+        print(f"{n} {plural(n, 'blog has', 'blogs have')} no time zone, so post dates are in UTC; set timezone in "
+              f"{plural(n, 'its', 'their')} rules file", file=sys.stderr)
+    if n := count("markup-unknown"):
+        print(f"{n} {plural(n, 'kind', 'kinds')} of unrecognised markup {plural(n, 'was', 'were')} kept as plain "
+              "text; see warnings above", file=sys.stderr)
     if n := count("alt-override-unused"):
         print(f"{n} [alt_text] {plural(n, 'entry matches', 'entries match')} no image in the book", file=sys.stderr)
 
@@ -237,7 +246,7 @@ def build_parser() -> argparse.ArgumentParser:
     """All CLI flags. Existing flags must keep working (users have saved invocations)."""
     parser = argparse.ArgumentParser(description="Build an EPUB from posts fetched from a platform.")
     parser.add_argument("--url", default="https://flaminghydra.ghost.io", help="Site URL")
-    parser.add_argument("--platform", default="ghost", help="Source platform (default: ghost)")
+    parser.add_argument("--platform", default="ghost", help="Source platform: ghost or wordpress-feed (default: ghost)")
     parser.add_argument("--processor", help="HTML processor (default: inferred from URL)")
     parser.add_argument("--admin-key", help="Platform API secret (id:secret for Ghost)")
     parser.add_argument("--set-secret", action="store_true", help="Store a secret in keyring (fallback: file)")

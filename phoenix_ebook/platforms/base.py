@@ -1,4 +1,4 @@
-"""Source platforms: where posts come from (Ghost today), and their registry."""
+"""Source platforms: where posts come from (Ghost, WordPress full-text feeds), and their registry."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -22,6 +22,9 @@ class Platform(ABC):
 
     name: str
     default_processor: str = "generic"  # used when no site processor matches the URL
+    # True when ``published_at`` is UTC because the platform can't tell the site's time zone: a blog's
+    # ``timezone`` setting (phoenix_ebook/sites/) converts it, and without one the build reports it.
+    dates_in_utc: bool = False
 
     def normalize_html(self, html: str) -> str:
         """Convert this platform's HTML dialect to canonical chapter HTML (ADR 0001).

@@ -444,6 +444,25 @@ def test_blog_add_stores_its_key_encrypted_and_nobody_has_it_yet(loaded, tmp_pat
     assert "ccc:333" not in backup
 
 
+def test_blog_add_for_a_wordpress_feed_keeps_the_feed_address_secret(loaded, tmp_path, monkeypatch, capsys):
+    """#49: a WordPress blog's key is its private feed address. It's stored encrypted like any key, and
+    appears in no output, backup or column; the blog's address is the public site."""
+    url, _, logins = loaded
+    _site(monkeypatch, logins)
+    feed = "https://defector.com/feed/0123456789abcdef0123456789abcdef?key=s3cr3t-key"
+    _with_key(monkeypatch, feed)
+    _, code = _run(monkeypatch, url, tmp_path, "blog", "add", "Defector", "--platform", "wordpress-feed",
+                   "--url", "https://defector.com", "--hosts", "defector.com,www.defector.com",
+                   "--short-name", "defector")
+    out = capsys.readouterr().out
+    defector = Blog("Defector", "wordpress-feed", "https://defector.com", ("defector.com", "www.defector.com"))
+    assert code == 0 and "s3cr3t-key" not in out
+    assert forms.blogs_for(TEST_USER)[0][-1] == defector
+    assert store.blog_key(store.active(), defector) == feed
+    backup = next((tmp_path / "backups").iterdir()).read_text()
+    assert "s3cr3t-key" not in backup and "0123456789abcdef0123456789abcdef" not in backup
+
+
 def test_blog_add_without_hosts_uses_the_api_host(loaded, tmp_path, monkeypatch):
     url, _, _ = loaded
     monkeypatch.setenv(store.MASTER_KEY_ENV, MASTER)

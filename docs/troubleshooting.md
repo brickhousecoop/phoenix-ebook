@@ -32,6 +32,20 @@ No key is stored for this site. The message lists the options: pass `--admin-key
 **`error: --set-secret needs --url (the site) or --domain`**
 Say which site the key is for: add `--url https://<site>.ghost.io`.
 
+### Your private feed (WordPress)
+
+A WordPress blog's "key" is its whole private full-text feed address (`https://<site>/feed/…?key=…`). Treat it like a password: the build never shows it.
+
+**`error: the stored feed for <site> isn't a web address`**
+What's stored isn't an address starting `https://`. Store the private feed address again:
+`build_epub.py --set-secret --platform wordpress-feed --url https://<site>`.
+
+**`error: the stored feed for <site> is on a different site (<other site>)`**
+The stored feed belongs to another blog, so nothing was fetched. Store this blog's own private feed address with the command above.
+
+**`error: <site> refused the private feed (HTTP 401)`** (or 403)
+The feed's key was probably changed or withdrawn. Ask the publisher for the current address and store it again.
+
 ### Reaching the site
 
 **`error: can't reach <site>: ConnectionError`** (or `Timeout`)
@@ -43,10 +57,19 @@ The site answered with an error. If the message continues with an explanation (e
 **`error: <site> didn't answer like a Ghost Admin API`**
 Something answered, but not Ghost. Usually `--url` is the public website rather than the Ghost address (`https://<site>.ghost.io`, shown in Ghost Admin), or a captive portal or proxy page intercepted the request.
 
+**`error: can't reach <site>'s feed (HTTP …)`**
+The WordPress site answered with an error, often because it's busy or down for a moment. Try again in a few minutes.
+
+**`error: <site>'s feed didn't answer with a feed`** (or `with an RSS feed`)
+Something answered, but not a feed: usually the stored address is a web page, not the private feed's address. Store the feed address again (see [Your private feed](#your-private-feed-wordpress)).
+
 ### Posts
 
 **`error: 1 post not found on <site>: "…"`** (or `N posts not found`)
 These slugs don't exist (all missing ones are listed at once). A slug is the last part of a post's URL: `https://flaminghydra.com/fender-bender/` → `fender-bender`. Drafts and scheduled posts can't be fetched until published.
+
+**`error: every post was left out of the book: they're all in categories this blog leaves out (…)`**
+Every post you chose is in a category the blog's rules file keeps out of books (`skip_categories`; for Defector, podcasts and crosswords). Choose other posts.
 
 ### Manifest file
 
@@ -74,7 +97,7 @@ These slugs don't exist (all missing ones are listed at once). A slug is the las
 ### Blog rules files
 
 **`site rules file NAME.toml …`**
-A file in `phoenix_ebook/sites/` has a mistake, and books from that blog can't be built until it's fixed; other blogs still build. The message names the mistake: an unknown setting (usually a typo; the message lists the real ones), a value that should be a list of words in quotes or `true`/`false`, broken TOML, a phrase with no words in it such as `"*"`, or a blog with no Python that doesn't say its `platform` and `sites`. See [Blog rule files](../README.md#blog-rule-files).
+A file in `phoenix_ebook/sites/` has a mistake, and books from that blog can't be built until it's fixed; other blogs still build. The message names the mistake: an unknown setting (usually a typo; the message lists the real ones), a value that should be a list of words in quotes or `true`/`false`, broken TOML, a phrase with no words in it such as `"*"`, a `timezone` that isn't a time zone name (it must look like `"America/New_York"`; the message says so as `timezone must be a time zone name in quotes`), or a blog with no Python that doesn't say its `platform` and `sites`. See [Blog rule files](../README.md#blog-rule-files).
 
 ### Output file
 
@@ -151,6 +174,21 @@ A link with no text (invisible on the website too) was removed; nothing visible 
 
 **`N content files had images that were left out; see warnings above`**
 A content page from a Word file (for example the foreword) had pictures in it. The text is in the book, but images in content files aren't carried over yet. If a picture matters, describe it in the text.
+
+### `post-left-out`
+
+**`N posts were left out: they're in categories this blog leaves out of books; see warnings above`**
+The post is in one of the categories the blog's [rules file](../README.md#blog-rule-files) keeps out of books (`skip_categories`), such as podcasts or games that can't work on a page. The rest of the book was built without it. To include it anyway, the blog's file has to change.
+
+### `dates-in-utc`
+
+**`N blogs have no time zone, so post dates are in UTC; set timezone in their rules file`**
+The platform gives post dates in UTC and the blog's rules file doesn't say which time zone the blog is in, so a post published late in the evening may show the next day's date. Add `timezone = "Area/City"` to the blog's file in `phoenix_ebook/sites/`.
+
+### `markup-unknown`
+
+**`N kinds of unrecognised markup were kept as plain text; see warnings above`**
+A post had a block of markup the platform doesn't know (for WordPress, a `wp-block-…` it hasn't met). Its words and pictures are in the book without the block's styling. Each kind is reported once per book, at the first post that has it: check that post reads well. If it doesn't, the platform needs teaching about that block.
 
 ### The `[alt_text]` block
 

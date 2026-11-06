@@ -21,7 +21,7 @@ def test_parse_post_addresses_strips_blank_lines_and_whitespace():
     assert parse_post_addresses("  a  \n\n b\n   \nc") == [(1, "a"), (3, "b"), (5, "c")]
 
 
-HYDRA, HELL = forms.BLOGS
+HYDRA, HELL, DEFECTOR = forms.BLOGS
 
 
 @pytest.mark.parametrize("address, blog", [
@@ -31,6 +31,8 @@ HYDRA, HELL = forms.BLOGS
     ("https://www.welcometohellworld.com/my-post/", HELL),
     ("welcometohellworld.com/my-post", HELL),
     ("https://hellworld.ghost.io/my-post/", HELL),
+    ("https://defector.com/my-post", DEFECTOR),
+    ("www.defector.com/my-post/", DEFECTOR),
 ])
 def test_post_list_finds_the_blog_from_a_full_address(address, blog):
     assert forms._check_post_list(address) == (blog, ["my-post"], [], None)

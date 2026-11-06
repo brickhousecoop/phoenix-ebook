@@ -40,6 +40,10 @@ EMBED_REMOVED = "data-embed-removed"
 EMBED_UNKNOWN = "data-embed-unknown"
 EMBED_SRC = "data-embed-src"
 
+# An empty marker where a platform unwrapped markup it doesn't know (e.g. a WordPress block); the value
+# names it. The builder reports each kind once per book and removes the markers.
+MARKUP_UNKNOWN = "data-markup-unknown"
+
 # ---- Changed links (#22): every link the build repairs, unlinks or removes is reported ----
 
 # On a repaired <a>: its original href, and why it changed.

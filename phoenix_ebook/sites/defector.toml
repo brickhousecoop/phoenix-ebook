@@ -1,0 +1,8 @@
+# Defector (defector.com), from its private full-text feed (#49). Only the shared cleanup: what it
+# removes is for Defector to decide, not us.
+platform = "wordpress-feed"
+sites = ["defector.com"]
+
+timezone = "America/New_York"
+# Posts that don't belong in a book (games, podcasts); a post asked for anyway is reported.
+skip_categories = ["Podcasts", "Crosswords"]

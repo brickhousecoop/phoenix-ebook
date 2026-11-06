@@ -19,7 +19,7 @@ from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
-from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
+from phoenix_ebook.canonical import (MARKUP_UNKNOWN, CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
                                      CALL_TO_ACTION_REMOVED_AS, CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
                                      EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
@@ -498,6 +498,40 @@ def _report_link_changes(soup, post: Post, problems: list[BuildProblem]) -> None
         span.unwrap()
 
 
+def _report_unknown_markup(soup, post: Post, problems: list[BuildProblem], seen: set[str]) -> None:
+    """Report each kind of markup a platform didn't know (and unwrapped) once per book; remove the markers."""
+    for marker in soup.find_all(attrs={MARKUP_UNKNOWN: True}):
+        if (name := marker[MARKUP_UNKNOWN]) not in seen:
+            seen.add(name)
+            problems.append(BuildProblem(kind="markup-unknown", post_slug=post.slug, url=None,
+                                         detail=f"{name}: unrecognised markup; its contents were kept, check they "
+                                                "read well (first of this kind in the book)"))
+        marker.decompose()
+
+
+def _choose_posts(posts: list[Post], processor: HtmlProcessor, platform: "Platform | None",
+                  problems: list[BuildProblem]) -> list[Post]:
+    """The posts that go in the book, with dates in the blog's time zone. Posts in a category the blog
+    leaves out are reported; dates left in UTC are reported once."""
+    kept = []
+    for post in posts:
+        if category := processor.leave_out(post):
+            problems.append(BuildProblem(kind="post-left-out", post_slug=post.slug, url=None,
+                                         detail=f"\"{post.title}\" is in {category}, which this blog leaves out "
+                                                "of books"))
+        else:
+            kept.append(processor.localize(post))
+    if posts and not kept:
+        raise InvalidBookSpec("every post was left out of the book: they're all in categories this blog leaves "
+                              "out (" + ", ".join(sorted({processor.leave_out(p) for p in posts})) + "). "
+                              "Choose other posts.")
+    if kept and platform is not None and platform.dates_in_utc and processor.rules.timezone is None:
+        problems.append(BuildProblem(kind="dates-in-utc", post_slug=None, url=None,
+                                     detail="post dates are in UTC, so a post published late in the evening may "
+                                            "show the next day; set the blog's timezone in its rules file"))
+    return kept
+
+
 def _report_embeds(soup, post: Post, problems: list[BuildProblem]) -> None:
     """Report and unmark embeds left out of the book or turned into generic link cards (#21)."""
     for marker in soup.find_all(attrs={EMBED_REMOVED: True}):
@@ -682,7 +716,8 @@ def build(
     EPUB is written (stage "write"); see ``Progress``.
     """
     validate_spec(spec)
-    posts = list(posts)
+    problems: list[BuildProblem] = []
+    posts = _choose_posts(list(posts), processor, platform, problems)
     session = session or requests.Session()
 
     book = epub.EpubBook()
@@ -714,7 +749,7 @@ def build(
     image_tally: Counter = Counter()  # images / described / decorative / missing, for accessibility metadata
     has_animation = False
     oembed_answers: dict = {}  # oEmbed URL -> answer (dict) or failure reason, once per book
-    problems: list[BuildProblem] = []
+    unknown_markup: set[str] = set()  # kinds already reported
 
     # ---- Cover (metadata only: no cover page, see #6) ----
     if spec.cover:
@@ -778,6 +813,7 @@ def build(
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
         _report_embeds(soup, post, problems)
+        _report_unknown_markup(soup, post, problems, unknown_markup)
         _report_link_changes(soup, post, problems)
         _lookup_thumbnails(soup, post, session, oembed_answers, problems)
 

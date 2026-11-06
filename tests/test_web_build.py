@@ -136,6 +136,41 @@ def test_results_page_groups_warnings_by_post_and_explains_them(monkeypatch):
     assert f'href="{problems.GUIDE_URL}#image-download-failed"' in page
 
 
+DEFECTOR_FEED = "https://defector.com/feed/0123456789abcdef0123456789abcdef?key=s3cr3t-key"
+
+
+def feed_route(slug, title, categories=(), creators=("Ann Writer",)):
+    item = (f"<item><title>{title}</title><link>https://defector.com/{slug}</link>"
+            "<pubDate>Fri, 06 Nov 2026 02:30:00 +0000</pubDate>"
+            + "".join(f"<dc:creator>{c}</dc:creator>" for c in creators)
+            + "".join(f"<category>{c}</category>" for c in categories)
+            + '<content:encoded><![CDATA[<p class="wp-block-paragraph">Words.</p>]]></content:encoded></item>')
+    body = ('<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" '
+            f'xmlns:dc="http://purl.org/dc/elements/1.1/"><channel><title>Defector</title>{item}</channel></rss>')
+    return {f"{DEFECTOR_FEED}&name={slug}": [FakeResponse(200, body.encode(), "application/rss+xml")]}
+
+
+def test_a_defector_book_from_its_private_feed(monkeypatch, tmp_path):
+    """A WordPress blog end to end on the website (#49): addresses matched to Defector, posts fetched from
+    the private feed, a podcast left out and reported, the feed address shown nowhere."""
+    monkeypatch.setenv(env_var_name("wordpress-feed", "defector.com"), DEFECTOR_FEED)
+    wire(monkeypatch, {**feed_route("a-story", "A Story", ["NBA"], ("Ann Writer", "Bo Second")),
+                       **feed_route("a-show", "A Show", ["Podcasts"])})
+    page = web_client().post("/", data={"posts": "https://defector.com/a-story\nwww.defector.com/a-show/",
+                                        "title": "Defected"}).text
+
+    assert "Download “Defected”" in page
+    assert "Post left out</a>: 1" in page
+    assert '<h3 id="post-1">A Show</h3>' in page and "&#34;A Show&#34; is in Podcasts" in page
+    assert "s3cr3t-key" not in page and "0123456789abcdef0123456789abcdef" not in page
+    [book] = (tmp_path / "books").glob("*/Defected.epub")
+    import zipfile
+    names = zipfile.ZipFile(book).namelist()
+    assert "EPUB/a-story.xhtml" in names and "EPUB/a-show.xhtml" not in names
+    chapter = zipfile.ZipFile(book).read("EPUB/a-story.xhtml").decode()
+    assert "05 Nov 2026" in chapter and "Ann Writer and Bo Second" in chapter
+
+
 def test_results_page_without_warnings(monkeypatch):
     wire(monkeypatch, post_route("a"))
     page = web_client().post("/", data={"posts": "flaminghydra.com/a"}).text

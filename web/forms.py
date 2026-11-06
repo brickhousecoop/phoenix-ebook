@@ -44,6 +44,7 @@ BLOGS = (
          ("flaminghydra.com", "www.flaminghydra.com", "flaminghydra.ghost.io")),
     Blog("Welcome to Hell World", "ghost", "https://hellworld.ghost.io",
          ("www.welcometohellworld.com", "welcometohellworld.com", "hellworld.ghost.io")),
+    Blog("Defector", "wordpress-feed", "https://defector.com", ("defector.com", "www.defector.com")),
 )
 
 
@@ -191,14 +192,15 @@ def merge_alt_fixes(alt_text: str, fixes: list[AltFix]) -> str:
 
 def _blog_of(address: str, blogs: tuple[Blog, ...]) -> tuple[Blog | None, str | None, bool]:
     """The blog and slug ``address`` names, and whether it's a full post address at all."""
+    is_address = False
     for platform in dict.fromkeys(blog.platform for blog in blogs):
         if parsed := get_platform(platform).parse_address(address):
             host, slug = parsed
+            is_address = True
             for blog in blogs:
                 if blog.platform == platform and host in blog.hosts:
                     return blog, slug, True
-            return None, None, True
-    return None, None, False
+    return None, None, is_address
 
 
 def _line_numbers(numbers: list[int]) -> str:

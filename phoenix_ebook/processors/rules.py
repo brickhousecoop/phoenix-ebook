@@ -1,7 +1,8 @@
 """Cleanup rules every blog shares, and the plain files that add to them (``phoenix_ebook/sites/``).
 
 What a blog removes is data: phrases and addresses, read from ``sites/<processor name>.toml``, on top
-of ``sites/_defaults.toml``. How it's removed is here. A phrase matches a whole line, ignoring capitals
+of ``sites/_defaults.toml``, along with a blog's ``timezone`` and the ``skip_categories`` whose posts
+books leave out. How it's removed is here. A phrase matches a whole line, ignoring capitals
 and final punctuation; ``#`` is any number, ``*`` any words. See "Blog rule files" in the README.
 """
 from __future__ import annotations
@@ -10,6 +11,7 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bs4 import NavigableString
 
@@ -30,7 +32,7 @@ _PAYWALL_LINE = re.compile(r"\b(?:read|unlock)\b.{0,10}\bthe rest\b.*\bsubscri|\
                            re.I)
 _SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
                     r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
-_SITE_SETTINGS = {"platform": str, "sites": list}
+_SITE_SETTINGS = {"platform": str, "sites": list, "timezone": str, "skip_categories": list}
 _LIST_SETTINGS = ("remove_lines", "keep_lines", "sales_links", "promo_links", "button_links")
 
 
@@ -64,6 +66,12 @@ class SiteRules:
     promo_links: tuple[str, ...] = ()  # buttons go, links in sentences stay, final sections made up of them go
     button_links: tuple[str, ...] = ()  # buttons go; nothing else changes
     remove_all_buttons: bool = False
+    timezone: ZoneInfo | None = None  # the blog's own time zone, for platforms whose dates are UTC
+    skip_categories: tuple[str, ...] = ()  # casefolded; a post in any of these is left out of the book
+
+    def leave_out(self, categories: list[str]) -> str | None:
+        """The first of ``categories`` this blog leaves out of books, as the post names it, or None."""
+        return next((c for c in categories if c.casefold() in self.skip_categories), None)
 
     def is_sales_link(self, href: str) -> bool:
         return _is_at(href, self.sales_links)
@@ -89,7 +97,7 @@ def read_site_file(path: Path) -> dict:
     if unknown := sorted(set(data) - known):
         raise SiteFileError(f"site rules file {path.name}: unknown setting {', '.join(unknown)}. "
                             f"The settings are: {', '.join(sorted(known))}.")
-    for name in _LIST_SETTINGS + ("sites",):
+    for name in _LIST_SETTINGS + ("sites", "skip_categories"):
         value = data.get(name, [])
         if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
             raise SiteFileError(f"site rules file {path.name}: {name} must be a list of words in quotes.")
@@ -97,6 +105,12 @@ def read_site_file(path: Path) -> dict:
         raise SiteFileError(f"site rules file {path.name}: remove_all_buttons must be true or false.")
     if not isinstance(data.get("platform", ""), str):
         raise SiteFileError(f"site rules file {path.name}: platform must be a name in quotes.")
+    if "timezone" in data:
+        try:
+            ZoneInfo(data["timezone"] if isinstance(data["timezone"], str) else "")
+        except (ZoneInfoNotFoundError, ValueError):
+            raise SiteFileError(f"site rules file {path.name}: timezone must be a time zone name in quotes, "
+                                'like "America/New_York".') from None
     return data
 
 
@@ -116,7 +130,9 @@ def load_site_rules(name: str, sites_dir: Path | None = None) -> SiteRules:
     return SiteRules(remove_lines=phrases("remove_lines"), keep_lines=phrases("keep_lines"),
                      sales_links=addresses("sales_links"), promo_links=addresses("promo_links"),
                      button_links=addresses("button_links"),
-                     remove_all_buttons=own.get("remove_all_buttons", False))
+                     remove_all_buttons=own.get("remove_all_buttons", False),
+                     timezone=ZoneInfo(own["timezone"]) if "timezone" in own else None,
+                     skip_categories=tuple(c.strip().casefold() for c in own.get("skip_categories", [])))
 
 
 # ---- Blocks ----

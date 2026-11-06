@@ -13,8 +13,16 @@ The single HTML form every platform converts its posts into before anything else
 _Avoid_: Clean HTML, normalized HTML (as a loose description)
 
 **Platform**:
-A publishing service posts come from (Ghost, later Substack), with its own API and HTML dialect.
+A publishing service posts come from (Ghost; WordPress, read through a private full-text feed; later Substack), with its own API and HTML dialect.
 _Avoid_: Source (that's the platform plus a site URL), CMS
+
+**Full-text feed**:
+A WordPress blog's private RSS feed whose items carry each post's whole text, given to subscribers or partners. Its address includes a secret key, so the whole address is treated as the blog's key.
+_Avoid_: RSS key, feed token
+
+**Left out**:
+A post a blog's rules keep out of books by category (`skip_categories`; Defector's podcasts and crosswords). Asked for anyway, it's skipped and reported, never an error unless every post is.
+_Avoid_: Excluded, filtered, blocked
 
 **Site processor**:
 Per-site adjustments applied on top of a platform's canonical HTML (e.g. dropping one site's comments footer).

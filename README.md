@@ -10,9 +10,11 @@ phoenix-ebook fetches posts from a publishing platform, cleans up each site's HT
 |---|---|---|
 | [Flaming Hydra](https://flaminghydra.com) | Ghost | `flaminghydra` |
 | [Welcome to Hell World](https://www.welcometohellworld.com) | Ghost | `hellworld` (only a [rules file](#blog-rule-files)) |
+| [Defector](https://defector.com) | WordPress full-text feed | `defector` (only a [rules file](#blog-rule-files): its time zone, and podcasts and crosswords left out) |
 | Any other Ghost site | Ghost | `generic`: the shared cleanup and the default rules |
+| Another WordPress site with a private full-text feed | WordPress full-text feed | `generic`; add a rules file with its `timezone` |
 
-More are on the way: more platforms, more site-specific processors and, eventually, a web UI for building books without the command line.
+More are on the way: more platforms and more site-specific processors.
 
 ## Requirements
 
@@ -41,6 +43,14 @@ Store the key once per site; you'll be prompted for it without echo:
 ```bash
 .venv/bin/python build_epub.py --set-secret --platform ghost --url https://flaminghydra.ghost.io
 ```
+
+For a **WordPress** blog (`--platform wordpress-feed`), the "key" is the blog's whole private full-text feed address, as the publisher gave it (for example `https://defector.com/feed/<feed id>?key=<key>`), and `--url` is the blog's public address:
+
+```bash
+.venv/bin/python build_epub.py --set-secret --platform wordpress-feed --url https://defector.com
+```
+
+Treat the feed address like a password: it is never printed or logged, and the build refuses one that's on a different site from `--url`. Prefer storing it to passing it with `--admin-key`, which leaves it in your shell's history.
 
 The key is stored under the URL's host name; use `--domain` to give the host explicitly instead. `--set-secret` uses your OS keyring, falling back to a file. On machines without a keyring (containers, servers), use `--set-secret-file`, which writes `~/.phoenix_secrets.json` with owner-only permissions.
 
@@ -261,7 +271,7 @@ Then open <http://127.0.0.1:8000> and sign in. It uses the same key lookup as th
 ```
 build_epub.py            # CLI
 phoenix_ebook/
-├── platforms/           # post sources (Ghost today)
+├── platforms/           # post sources: Ghost, WordPress full-text feeds
 ├── processors/          # per-site HTML cleanup, and the shared rules (rules.py)
 ├── sites/               # what each blog removes, as data
 ├── epub_builder.py      # EPUB assembly
@@ -275,7 +285,7 @@ phoenix_ebook/
 
 Each platform converts its own HTML dialect into one **canonical chapter HTML**; everything after that (site processors, the builder, images, alt text, styles) only sees the canonical form. Platform quirks belong in the platform, site quirks in a site processor. See [ADR 0001](docs/adr/0001-platforms-normalize-to-canonical-html.md) and the canonical forms a platform must produce, such as notes, in [docs/canonical-html.md](docs/canonical-html.md).
 
-**New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name` (and `default_processor` if not `"generic"`), decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, run through your `normalize_html()` so it's canonical (Ghost's, for example, drops editor `kg-*` classes); authors as `Author(name, url)`; `published_at` in the site's own timezone; and the feature image fields if the platform has them. Override `canonical_image_url()` if the platform serves size variants of the same image. The docstrings on `Platform` have the full contract, including the errors to raise.
+**New platform.** Subclass `Platform` in `phoenix_ebook/platforms/`, set `name` (and `default_processor` if not `"generic"`), decorate it with `@register_platform`, and import the module in `phoenix_ebook/platforms/__init__.py`. `fetch_post()` returns a `Post`: the body HTML only, run through your `normalize_html()` so it's canonical (Ghost's, for example, drops editor `kg-*` classes); authors as `Author(name, url)`; `published_at` in the site's own timezone (or UTC with `dates_in_utc = True`, when the platform can't tell, so a blog's `timezone` setting converts it); `categories` if the platform has them; and the feature image fields if it has them. Override `canonical_image_url()` if the platform serves size variants of the same image. The docstrings on `Platform` have the full contract, including the errors to raise.
 
 **New site.** Most sites need no Python, only a [rules file](#blog-rule-files), or nothing at all if the default rules are enough. For unusual logic, subclass `HtmlProcessor` in `phoenix_ebook/processors/`, set `name`, `platform` and `sites` (domain substrings it handles), decorate it with `@register_processor`, import the module in `phoenix_ebook/processors/__init__.py`, and override `apply_rules()`. It's chosen automatically for matching sites on that platform (or with `--processor`). Overrides of `clean()` **must call `super().clean()` first**; that's where the shared web cleanup happens. See `flaminghydra.py` for an example.
 
@@ -302,6 +312,8 @@ remove_lines = [
 | `promo_links` | Addresses: buttons linking there go, links in sentences stay, and a final section made up of them goes |
 | `button_links` | Addresses: buttons linking there go, and nothing else changes |
 | `remove_all_buttons` | `true` removes every button |
+| `timezone` | The blog's time zone, like `"America/New_York"`, for platforms whose dates come in UTC (WordPress feeds). Without it, dates stay in UTC and the build says so |
+| `skip_categories` | Category or tag names (ignoring capitals) whose posts are left out of books, e.g. `["Podcasts", "Crosswords"]`. A post asked for anyway is skipped and reported; a book of only such posts stops with an error |
 
 A **phrase** matches a whole line, ignoring capitals and final punctuation. `#` is any number and `*` is any words: `get #% off *` matches "Get 20% off for 1 year". A phrase never matches a line over 35 words, and quotes are left alone. An **address** matches from its start, ignoring `https://` and `www.`. A mistake in a file stops builds for that blog only, with an error naming the file.
 

@@ -26,6 +26,7 @@ A post's notes are a numbered list at the end of the post, with markers in the t
 
 **Platform mappings:**
 - Ghost: Markdown-card (markdown-it) footnotes, converted in `GhostPlatform.normalize_html`.
+- WordPress: to do when a blog uses the core footnotes block (none in Defector's sample).
 - Substack: to do with the Substack platform.
 
 ## Buttons
@@ -60,7 +61,7 @@ Embedded media (videos, audio, social posts, bookmarked pages) become a link car
 - The thumbnail is **decorative** (`data-decorative`): empty alt text by design, not reported. `data-fallback-src` is tried if `src` fails. When the thumbnail's address must be looked up, the `<img>` has no `src` but `data-thumbnail-lookup` (an oEmbed URL); text with `data-oembed-text="{author_name} (@handle)"` is filled from the same answer, or keeps its text. The builder resolves and removes all of these.
 - An embed left out of the book (a form) is replaced by `<div data-embed-removed="Tally form" data-embed-src="…"></div>`; a card made from an unrecognised embed carries `data-embed-unknown="<its URL>"`. The builder reports both and removes the markers.
 
-`phoenix_ebook/embeds.py` builds these from an embed's `<iframe>` or a social post's quote (provider rules, not platform rules). Ghost: embed, audio, video and bookmark cards, plus iframes pasted in HTML cards.
+`phoenix_ebook/embeds.py` builds these from an embed's `<iframe>` or a social post's quote (provider rules, not platform rules). Ghost: embed, audio, video and bookmark cards, plus iframes pasted in HTML cards. WordPress: `wp-block-embed` blocks (an embed with only an address becomes a generic card), and `wp-block-video`/`wp-block-audio` blocks for files on the blog itself.
 
 ## Call-to-action markers
 
@@ -86,6 +87,12 @@ The shared cleanup (`phoenix_ebook/links.py`, run by every processor) marks each
 ```
 
 Section ids are plain ASCII (`día-de-los-muertos` → `dia-de-los-muertos`); links to a renamed id follow it and are reported as repaired.
+
+## Unknown markup
+
+A platform that meets markup it doesn't know keeps the words and pictures inside, drops the wrapper, and leaves an empty marker naming it: `<span data-markup-unknown="wp-block-x"></span>`. The builder reports each kind once per book, at the first post that has it, and removes the markers.
+
+**WordPress** (`WordPressFeedPlatform.normalize_html`): block classes (`wp-block-*`, `is-*`, `has-*`, `align*`, `size-*`) and responsive image attributes (`srcset`, `sizes`) are removed. Image, quote, list, heading, table and separator blocks are then ordinary HTML; a pullquote becomes `<blockquote class="pullquote">`; a gallery becomes its images, one figure each, with its caption as a paragraph after them; button blocks become canonical buttons; layout blocks (`group`, `columns`, `media-text`, …) are unwrapped and spacers dropped; emoji WordPress swapped for pictures become the emoji again.
 
 ## Not platform-specific
 

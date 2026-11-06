@@ -1,6 +1,8 @@
 """HTML processors: per-site cleanup of post HTML before it becomes a chapter, and their registry."""
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment, NavigableString
@@ -85,6 +87,22 @@ class HtmlProcessor:
         chapter's own heading and page ``<title>`` always use the plain title.
         """
         return post.title
+
+    def leave_out(self, post: Post) -> str | None:
+        """The category (one of the blog's ``skip_categories``) that keeps ``post`` out of books, or None."""
+        return self.rules.leave_out(post.categories)
+
+    def localize(self, post: Post) -> Post:
+        """``post`` with its date in the blog's ``timezone``, when its rules file sets one."""
+        if self.rules.timezone is None or not post.published_at:
+            return post
+        try:
+            when = datetime.fromisoformat(post.published_at.replace("Z", "+00:00"))
+        except ValueError:
+            return post
+        if when.tzinfo is None:
+            return post
+        return replace(post, published_at=when.astimezone(self.rules.timezone).isoformat())
 
     def clean(self, soup: BeautifulSoup, post: Post) -> None:
         """Modify ``soup`` (the post body, plus its feature image figure) in place.
