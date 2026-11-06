@@ -1,10 +1,10 @@
 # Setting up the website on Vercel
 
-How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel-calls-the-library.md)) runs on Vercel, written for someone new to Vercel. It records what was done for `phoenix-ebook.vercel.app` in October 2026; follow it to set the site up again, or to check how it's set up.
+How the book-building website (`web/`, see [ADR 0002](adr/0002-website-on-vercel-calls-the-library.md)) runs on Vercel, written for someone new to Vercel. It records what was done for the `phoenix-ebook` project from October 2026; follow it to set the site up again, or to check how it's set up.
 
 ## Where it runs
 
-- **Address:** <https://phoenix-ebook.vercel.app>, behind the site's own sign-in ([ADR 0003](adr/0003-website-sign-in-own-passwords.md)): only the users set up below can build books.
+- **Address:** <https://ebookmaker.phoenixbook.services>, behind the site's own sign-in ([ADR 0003](adr/0003-website-sign-in-own-passwords.md)): only the users set up below can build books. It is a custom domain in the project's **Settings → Domains**, added by a team member by November 2026; the original <https://phoenix-ebook.vercel.app> still works and redirects there (HTTP 308). Previews keep their own `*.vercel.app` addresses.
 - **Vercel project:** `phoenix-ebook`, on **The Brick House** team (`brickhousecoop`, Pro plan).
 - **Deploys:** connected to GitHub `brickhousecoop/phoenix-ebook`. Every push to `main` deploys to production; other branches get their own preview address, behind the site's sign-in like production. Previews share production's store and Blob store.
 - **Configuration in the repo:**

@@ -254,7 +254,7 @@ Then open <http://127.0.0.1:8000> and sign in. It uses the same key lookup as th
 
 **Closing the tab mid-build** doesn't stop the build, locally or on Vercel: it runs to the end and saves the book, but the link is never shown, so build it again.
 
-**On Vercel** the site runs at <https://phoenix-ebook.vercel.app>; [docs/website-setup.md](docs/website-setup.md) explains how it's set up, who can change what, and how to read its logs.
+**On Vercel** the site runs at <https://ebookmaker.phoenixbook.services> (<https://phoenix-ebook.vercel.app> redirects there); [docs/website-setup.md](docs/website-setup.md) explains how it's set up, who can change what, and how to read its logs.
 
 ## Extending phoenix-ebook
 

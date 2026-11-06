@@ -3,7 +3,7 @@
 Ghost→EPUB builder. Name it "phoenix-ebook" in prose — it is one module of a larger Phoenix project, not "Phoenix" itself. Currently targets `flaminghydra.ghost.io`. Trajectory:
 1. Add more source platforms.
 2. Add more site-specific HTML quirks via per-site processors.
-3. A web UI that drives the library (not just a CLI): live at phoenix-ebook.vercel.app, see `docs/website-setup.md`.
+3. A web UI that drives the library (not just a CLI): live at ebookmaker.phoenixbook.services (phoenix-ebook.vercel.app redirects there), see `docs/website-setup.md`.
 
 The code is already split for that trajectory — keep the seams.
 
