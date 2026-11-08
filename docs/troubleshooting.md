@@ -116,13 +116,13 @@ The book was written and is usable; the build still exits with code 0. Each prob
 Each warning gives the image's URL and the reason: an HTTP error, a timeout, or "response is not a valid image" (e.g. a login page instead of a picture). Temporary failures were already retried once.
 - **Try the build again**; network blips are the usual cause.
 - **"HTTP 403" with a firewall message** (e.g. "Approval required for …"): the host is blocked; see [Firewalls and proxies](#firewalls-and-proxies).
-- **"HTTP 404"**: the image is gone from where the post points. Fix or remove it in the post in Ghost.
+- **"HTTP 404"**: the image is gone from where the post points. Fix or remove it in the post on the blog's own website.
 - **"thumbnail lookup failed"**: a link card's thumbnail (TikTok, Vimeo, Spotify) couldn't be looked up. The card is still in the book with its title and link; only the picture is missing. "HTTP 404" here usually means the video or episode was deleted.
 
 ### `image-missing-alt`
 
 **`N images have no alt text`**
-Screen readers can't describe these images, and the book can't claim "text descriptions for images" in its accessibility metadata. Best of all, add the alt text in Ghost, so the website benefits too.
+Screen readers can't describe these images, and the book can't claim "text descriptions for images" in its accessibility metadata. Best of all, add the alt text to the post on the blog's own website, so its readers benefit too.
 
 On the command line, the build prints a ready-made `[alt_text]` block after the warnings: paste it into your manifest and write a short description for each image (or leave `""` for an image that's purely decorative). See the README's *Alt text* section for how to write it.
 
@@ -158,7 +158,7 @@ Embedded content phoenix-ebook doesn't recognise (e.g. a Dailymotion or PBS play
 ### `link-repaired`
 
 **`N links in posts were repaired; check the warnings above`**
-A link in a post was broken and the build fixed it. Each warning gives the original address, the new one and why: a link to a section of the post that didn't exist was pointed at the section it most likely meant (matched by name or heading), or a mistyped address was corrected (spaces, quotes, a missing `https://`). **Check the section matches**: a repair can pick the wrong section. To fix one for good, correct the link in the post in Ghost.
+A link in a post was broken and the build fixed it. Each warning gives the original address, the new one and why: a link to a section of the post that didn't exist was pointed at the section it most likely meant (matched by name or heading), or a mistyped address was corrected (spaces, quotes, a missing `https://`). **Check the section matches**: a repair can pick the wrong section. To fix one for good, correct the link in the post on the blog's own website.
 
 ### `link-unlinked`
 
@@ -168,7 +168,7 @@ A link's target couldn't be found (e.g. a digest's contents pointing at a sectio
 ### `link-empty-removed`
 
 **`N empty links were removed; see warnings above`**
-A link with no text (invisible on the website too) was removed; nothing visible changed. If the post meant to link some words, fix it in Ghost.
+A link with no text (invisible on the website too) was removed; nothing visible changed. If the post meant to link some words, fix it on the blog's own website.
 
 ### `content-image-left-out`
 
