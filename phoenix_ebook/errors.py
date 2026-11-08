@@ -67,11 +67,17 @@ def explain_response(resp) -> str | None:
 
     JSON bodies: the first error message (Ghost: errors[0].message / context).
     Plain text (e.g. a firewall's "Approval required for …"): the first two lines.
-    HTML pages: None (they're noise).
+    HTML pages, images and other files: None (they're noise; YouTube answers a missing thumbnail
+    with a placeholder picture).
     """
     content_type = (resp.headers.get("Content-Type") or "").lower()
+    if content_type.startswith(("image/", "audio/", "video/", "font/", "application/octet-stream")):
+        return None
     body = resp.content or b""
-    text = body.decode("utf-8", "replace").strip()
+    try:
+        text = body.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return None
     if not text or "html" in content_type or text.lstrip().lower().startswith(("<!doctype", "<html")):
         return None
     if "json" in content_type or text.startswith("{"):

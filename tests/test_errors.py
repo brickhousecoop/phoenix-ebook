@@ -294,6 +294,8 @@ def test_library_build_raises_output_error(tmp_path):
     (ghost_error(401, "Unknown Admin API Key"), "Unknown Admin API Key"),
     (FakeResponse(500, b"<html><body>Oops</body></html>", "text/html"), None),
     (FakeResponse(502, b"", "text/plain"), None),
+    (FakeResponse(404, b"\xff\xd8\xff\xe0\x00\x10JFIF\x00", "image/jpeg"), None),  # YouTube's placeholder thumbnail
+    (FakeResponse(404, b"\xff\xd8\xff\xe0\x00\x10JFIF\x00", ""), None),  # binary with no type
 ])
 def test_explain_response(response, expected):
     assert explain_response(response) == expected
