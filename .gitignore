@@ -10,6 +10,7 @@ token_old.py
 *_images/
 *.html
 !web/templates/*.html
+!phoenix_ebook/credits/*.html
 
 # Python
 __pycache__/
