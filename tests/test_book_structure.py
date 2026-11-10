@@ -70,7 +70,8 @@ def test_title_page_omits_absent_fields(build_book):
 
 def test_no_placeholders_without_files(build_book):
     book = build_book(TWO_POSTS, placeholders=False)
-    assert reading_order(book) == ["titlepage.xhtml", "nav.xhtml", "one.xhtml", "two.xhtml"]
+    # "About This Book" stays: it carries the Phoenix section (#50).
+    assert reading_order(book) == ["titlepage.xhtml", "nav.xhtml", "one.xhtml", "two.xhtml", "about.xhtml"]
     assert "placeholder" not in " ".join(book.text(n) for n in reading_order(book))
 
 
@@ -79,7 +80,7 @@ def test_no_placeholders_with_only_a_foreword(build_book, tmp_path):
     foreword.write_text("<h2>Foreword</h2><p>Hi.</p>")
     book = build_book(TWO_POSTS, placeholders=False, foreword_file=str(foreword))
     assert reading_order(book) == ["titlepage.xhtml", "nav.xhtml", "foreword.xhtml",
-                                   "halftitlepage.xhtml", "one.xhtml", "two.xhtml"]
+                                   "halftitlepage.xhtml", "one.xhtml", "two.xhtml", "about.xhtml"]
 
 
 def test_supplied_file_is_used_instead_of_placeholder(build_book, tmp_path):
@@ -107,7 +108,7 @@ def contents_labels(book) -> list[str]:
 def test_contents_labels_are_plain_titles_by_default(build_book):
     from phoenix_ebook.models import Author
     book = build_book(post(slug="one", title="One", authors=[Author("A")]), placeholders=False)
-    assert contents_labels(book) == ["One"]
+    assert contents_labels(book) == ["One", "About This Book"]
 
 
 def test_flaming_hydra_contents_show_authors_but_pages_keep_plain_titles(build_book):
@@ -116,7 +117,7 @@ def test_flaming_hydra_contents_show_authors_but_pages_keep_plain_titles(build_b
              post(slug="two", title="Two", authors=[Author("Ann"), Author("Bo"), Author("Cy")]),
              post(slug="three", title="Three")]
     book = build_book(posts, processor="flaminghydra", placeholders=False)
-    assert contents_labels(book) == ["One — Ann", "Two — Ann, Bo and Cy", "Three"]
+    assert contents_labels(book) == ["One — Ann", "Two — Ann, Bo and Cy", "Three", "About This Book"]
     assert "One — Ann" in book.text("toc.ncx")
     assert "<title>One</title>" in book.chapter("one") and "<h2>One</h2>" in book.chapter("one")
 

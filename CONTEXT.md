@@ -72,6 +72,10 @@ _Avoid_: Preliminaries, prelims
 Text a post attaches to a point in its body (a numbered marker in the text), shown at the end of that post's chapter and as a pop-up in reading apps that support it. Not the "Notes" back-matter page, which is book-level.
 _Avoid_: Footnote (it isn't at the foot of a page), citation
 
+**Phoenix credits**:
+The Phoenix Library Service section that ends "About This Book" in every book: what the service is and thanks to Phoenix's contributors (`phoenix_ebook/credits/`). Not in the book's metadata.
+_Avoid_: Colophon (the whole About page is that), acknowledgements (that's the editor's page)
+
 **Back matter**:
 The pages after the last chapter: notes, acknowledgements, and "About This Book".
 _Avoid_: End matter, appendix

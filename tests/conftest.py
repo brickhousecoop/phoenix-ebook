@@ -208,7 +208,8 @@ class Built:
         return self.text(f"{slug}.xhtml")
 
     def image_names(self) -> list[str]:
-        return [n for n in self.zip.namelist() if n.startswith("EPUB/images/")]
+        """The posts' images; the Phoenix credits image every book carries (#50) is left out."""
+        return [n for n in self.zip.namelist() if n.startswith("EPUB/images/") and not n.startswith("EPUB/images/credits-")]
 
 
 @pytest.fixture

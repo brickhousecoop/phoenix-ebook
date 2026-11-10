@@ -25,6 +25,7 @@ from phoenix_ebook.canonical import (MARKUP_UNKNOWN, CALL_TO_ACTION, CALL_TO_ACT
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
 from phoenix_ebook.content import check_content_file, load_content
+from phoenix_ebook.credits import credits_section
 from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError, PostNotFound
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
@@ -139,7 +140,6 @@ PLACEHOLDER_TEXT = {
     "Foreword": "[Foreword placeholder — introductory remarks by a guest writer.]",
     "Notes": "[Notes placeholder — endnotes, references, etc.]",
     "Acknowledgements": "[Acknowledgements placeholder — thank-yous and credits.]",
-    "About This Book": "[About this publication placeholder — production credits, source, rights, etc.]",
 }
 
 
@@ -899,7 +899,6 @@ def build(
     for file_attr, page_title, file_name, role in [
         (spec.notes_file, "Notes", "notes.xhtml", None),
         (spec.acknowledgements_file, "Acknowledgements", "acknowledgements.xhtml", "acknowledgments"),
-        (spec.about_file, "About This Book", "about.xhtml", None),
     ]:
         content = _load_or_placeholder(file_attr, page_title, PLACEHOLDER_TEXT[page_title], spec.placeholders,
                                        problems)
@@ -907,6 +906,18 @@ def build(
             if role:
                 content = _section(role, content)
             back.append(_add_page(book, styles, page_title, file_name, content, spec.lang, part="backmatter"))
+
+    # "About This Book" is always there: the editor's text, if any, then the Phoenix section (#50).
+    credits = credits_section()
+    about = _load_content(spec.about_file, "About This Book", problems) if spec.about_file else "<h2>About This Book</h2>"
+    back.append(_add_page(book, styles, "About This Book", "about.xhtml", f"{about}\n{credits.html}", spec.lang,
+                          part="backmatter"))
+    for image in credits.images:
+        book.add_item(epub.EpubItem(uid=f"credits-{image.stem}", file_name=f"images/credits-{image.name}",
+                                    media_type=media_type_for_ext(image.suffix.lower()), content=image.read_bytes()))
+    image_tally["images"] += len(credits.images)
+    image_tally["described"] += credits.described
+    image_tally["decorative"] += credits.decorative
 
     for url, _ in spec.alt_text.items():
         if canonical_url(url) not in used_overrides:

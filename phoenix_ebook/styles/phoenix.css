@@ -188,3 +188,28 @@ section[epub|type~="chapter"] p.byline{
 p.byline + p{
 	text-indent: 0;
 }
+
+/* ---- The Phoenix Library Service section that ends "About This Book" (#50) ---- */
+
+section.phoenix-credits{
+	margin-top: 3em;
+}
+
+/* Prose paragraphs set apart, like a colophon, rather than indented like a chapter. */
+section.phoenix-credits p{
+	margin: 1em 0;
+	text-indent: 0;
+}
+
+section.phoenix-credits p.centered{
+	text-align: center;
+}
+
+section.phoenix-credits figure{
+	margin: 2em 0 0;
+}
+
+/* Straight after the page heading (no About text from the editor): no extra gap. */
+h2 + section.phoenix-credits{
+	margin-top: 0;
+}

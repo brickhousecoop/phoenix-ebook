@@ -26,14 +26,16 @@ def animated_gif() -> bytes:
 BASE_FEATURES = ["tableOfContents", "readingOrder", "structuralNavigation", "displayTransformability"]
 
 
-def test_book_without_images(build_book):
+def test_book_whose_posts_have_no_images(build_book):
+    """Every book ends with the Phoenix image (#50), described, so even text-only posts make a book
+    with one image that has alternative text."""
     book = build_book(post("<p>Text only.</p>"))
-    assert schema(book, "accessMode") == ["textual"]
-    assert schema(book, "accessModeSufficient") == ["textual"]
-    assert schema(book, "accessibilityFeature") == BASE_FEATURES
+    assert schema(book, "accessMode") == ["textual", "visual"]
+    assert schema(book, "accessModeSufficient") == ["textual", "textual,visual"]
+    assert schema(book, "accessibilityFeature") == BASE_FEATURES + ["alternativeText"]
     assert schema(book, "accessibilityHazard") == ["none"]
     [summary] = schema(book, "accessibilitySummary")
-    assert "table of contents" in summary and "images" not in summary
+    assert "table of contents" in summary and "1 of 1 images have text descriptions." in summary
 
 
 def test_all_images_described_or_decorative(build_book):
@@ -43,7 +45,7 @@ def test_all_images_described_or_decorative(build_book):
     assert schema(book, "accessModeSufficient") == ["textual", "textual,visual"]
     assert schema(book, "accessibilityFeature") == BASE_FEATURES + ["alternativeText"]
     [summary] = schema(book, "accessibilitySummary")
-    assert "1 of 2 images have text descriptions; 1 is decorative." in summary
+    assert "2 of 3 images have text descriptions; 1 is decorative." in summary  # + the Phoenix image (#50)
 
 
 def test_image_missing_alt_means_no_alternative_text_claim(build_book):
@@ -51,7 +53,7 @@ def test_image_missing_alt_means_no_alternative_text_claim(build_book):
     book = build_book(post(html), {U + "a.png": [ok(png())], U + "b.png": [ok(png())]})
     assert "alternativeText" not in schema(book, "accessibilityFeature")
     assert schema(book, "accessModeSufficient") == ["textual,visual"]
-    assert "1 of 2 images have text descriptions." in schema(book, "accessibilitySummary")[0]
+    assert "2 of 3 images have text descriptions." in schema(book, "accessibilitySummary")[0]  # + the Phoenix image
 
 
 def test_animated_gif_means_unknown_flashing_hazard(build_book):

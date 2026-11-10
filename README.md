@@ -163,9 +163,11 @@ Pages appear in this order:
 | *Chapters: one per post, in the order given* | | |
 | Notes | `--notes-file` | placeholder page |
 | Acknowledgements | `--acknowledgements-file` | placeholder page |
-| About This Book | `--about-file` | placeholder page |
+| About This Book | `--about-file` | always there: it ends with the Phoenix Library Service section |
 
 Placeholder pages hold bracketed stand-in text so you can see where a section goes. For a finished book, pass `--no-placeholders` (manifest: `placeholders = false` under `[content]`) and sections without a file are left out instead.
+
+**Every book ends with the Phoenix Library Service section**: a few words about the service and thanks to the people who made Phoenix possible, last on "About This Book", after your own About text if you give one. It's `phoenix_ebook/credits/credits.html` (with its image beside it); edit that file to change it. It's on every book and can't be turned off.
 
 The cover (`--cover`) is the book's cover image in reading apps and libraries; it isn't repeated as a page inside the book, which some stores (notably Kindle) warn against. If a content file or the cover doesn't exist, the build stops with an error naming the option, before fetching anything.
 
