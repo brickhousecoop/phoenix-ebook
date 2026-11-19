@@ -175,6 +175,9 @@ def _report_problems(problems) -> None:
     if n := count("image-download-failed"):
         print(f"{n} {plural(n, 'image', 'images')} could not be downloaded and "
               f"{plural(n, 'was', 'were')} left out; see warnings above", file=sys.stderr)
+    if n := count("image-rights-not-cleared"):
+        print(f"{n} {plural(n, 'photo was', 'photos were')} left out: their rights for ebooks aren't cleared; "
+              "see warnings above", file=sys.stderr)
     if n := count("image-missing-alt"):
         print(f"{n} {plural(n, 'image has', 'images have')} no alt text", file=sys.stderr)
     if n := count("image-suspicious-alt"):

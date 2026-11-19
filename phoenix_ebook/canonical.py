@@ -44,6 +44,13 @@ EMBED_SRC = "data-embed-src"
 # names it. The builder reports each kind once per book and removes the markers.
 MARKUP_UNKNOWN = "data-markup-unknown"
 
+# An empty marker where an image was left out because the blog's rules say its rights for ebooks aren't
+# cleared (#51): the value says which rule matched; the image's address is in IMAGE_LEFT_OUT_URL and its
+# caption, if it had one, in IMAGE_LEFT_OUT_CAPTION. The builder reports it and removes the marker.
+IMAGE_LEFT_OUT = "data-image-left-out"
+IMAGE_LEFT_OUT_URL = "data-image-left-out-url"
+IMAGE_LEFT_OUT_CAPTION = "data-image-left-out-caption"
+
 # ---- Changed links (#22): every link the build repairs, unlinks or removes is reported ----
 
 # On a repaired <a>: its original href, and why it changed.

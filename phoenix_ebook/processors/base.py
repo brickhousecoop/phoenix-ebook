@@ -10,8 +10,9 @@ from bs4 import BeautifulSoup, Comment, NavigableString
 from phoenix_ebook.errors import InvalidBookSpec, SiteFileError
 from phoenix_ebook.links import remove_empty_headings_and_ids, repair_links
 from phoenix_ebook.models import Post
-from phoenix_ebook.processors.rules import (SITES_DIR, SiteRules, read_site_file, load_site_rules, remove_buttons,
-                                            remove_final_sections, remove_sales_lines, unlink_sales_links)
+from phoenix_ebook.processors.rules import (SITES_DIR, SiteRules, leave_out_images, load_site_rules,
+                                            read_site_file, remove_buttons, remove_final_sections,
+                                            remove_sales_lines, unlink_sales_links)
 
 
 ANY_PLATFORM = "*"
@@ -111,7 +112,8 @@ class HtmlProcessor:
         must call ``super().clean()`` first: this base implementation removes
         scripts/iframes/styles and web-only markup (inline styles, comments, …),
         empty headings and ids, and repairs or unlinks broken links (marking each
-        changed link for the build report; see ``phoenix_ebook.links``), then
+        changed link for the build report; see ``phoenix_ebook.links``), leaves out
+        the images the blog's rules say to (never downloaded, each reported), then
         applies the blog's rules (``apply_rules``).
         """
         for tag in soup.find_all(["script", "iframe", "style"]):
@@ -119,6 +121,7 @@ class HtmlProcessor:
         _strip_web_markup(soup)
         remove_empty_headings_and_ids(soup)
         repair_links(soup)
+        leave_out_images(soup, self.rules)
         self.apply_rules(soup, post)
 
     def apply_rules(self, soup: BeautifulSoup, post: Post) -> None:

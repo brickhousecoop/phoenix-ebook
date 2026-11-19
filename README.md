@@ -10,7 +10,7 @@ phoenix-ebook fetches posts from a publishing platform, cleans up each site's HT
 |---|---|---|
 | [Flaming Hydra](https://flaminghydra.com) | Ghost | `flaminghydra` |
 | [Welcome to Hell World](https://www.welcometohellworld.com) | Ghost | `hellworld` (only a [rules file](#blog-rule-files)) |
-| [Defector](https://defector.com) | WordPress full-text feed | `defector` (only a [rules file](#blog-rule-files): its time zone, and podcasts and crosswords left out) |
+| [Defector](https://defector.com) | WordPress full-text feed | `defector` (only a [rules file](#blog-rule-files): its time zone, podcasts and crosswords left out, and Getty Images photos left out) |
 | Any other Ghost site | Ghost | `generic`: the shared cleanup and the default rules |
 | Another WordPress site with a private full-text feed | WordPress full-text feed | `generic`; add a rules file with its `timezone` |
 
@@ -316,6 +316,8 @@ remove_lines = [
 | `remove_all_buttons` | `true` removes every button |
 | `timezone` | The blog's time zone, like `"America/New_York"`, for platforms whose dates come in UTC (WordPress feeds). Without it, dates stay in UTC and the build says so |
 | `skip_categories` | Category or tag names (ignoring capitals) whose posts are left out of books, e.g. `["Podcasts", "Crosswords"]`. A post asked for anyway is skipped and reported; a book of only such posts stops with an error |
+| `leave_out_images` | File-name patterns of images whose rights for ebooks aren't cleared, e.g. `["GettyImages-*"]`. `*` is any characters and capitals are ignored; the pattern is matched against the whole file name (the last part of the image's address). A matching image is left out with its caption, never downloaded, and reported |
+| `leave_out_credits` | Words that credit such images in a caption, ignoring capitals, e.g. `["Getty Images"]` (which also catches "AFP via Getty Images"). The image goes the same way |
 
 A **phrase** matches a whole line, ignoring capitals and final punctuation. `#` is any number and `*` is any words: `get #% off *` matches "Get 20% off for 1 year". A phrase never matches a line over 35 words, and quotes are left alone. An **address** matches from its start, ignoring `https://` and `www.`. A mistake in a file stops builds for that blog only, with an error naming the file.
 

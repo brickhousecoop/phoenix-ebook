@@ -1,8 +1,9 @@
 """Cleanup rules every blog shares, and the plain files that add to them (``phoenix_ebook/sites/``).
 
 What a blog removes is data: phrases and addresses, read from ``sites/<processor name>.toml``, on top
-of ``sites/_defaults.toml``, along with a blog's ``timezone`` and the ``skip_categories`` whose posts
-books leave out. How it's removed is here. A phrase matches a whole line, ignoring capitals
+of ``sites/_defaults.toml``, along with a blog's ``timezone``, the ``skip_categories`` whose posts
+books leave out, and the images they leave out (``leave_out_images``, ``leave_out_credits``). How it's
+removed is here. A phrase matches a whole line, ignoring capitals
 and final punctuation; ``#`` is any number, ``*`` any words. See "Blog rule files" in the README.
 """
 from __future__ import annotations
@@ -11,12 +12,14 @@ import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from bs4 import NavigableString
 
 from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_REMOVED, CALL_TO_ACTION_REMOVED_AS,
-                                     CALL_TO_ACTION_REMOVED_URL, FEATURE_IMAGE, mark_call_to_action)
+                                     CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, FEATURE_IMAGE, IMAGE_LEFT_OUT,
+                                     IMAGE_LEFT_OUT_CAPTION, IMAGE_LEFT_OUT_URL, mark_call_to_action)
 from phoenix_ebook.errors import SiteFileError
 
 SITES_DIR = Path(__file__).parent.parent / "sites"
@@ -33,7 +36,8 @@ _PAYWALL_LINE = re.compile(r"\b(?:read|unlock)\b.{0,10}\bthe rest\b.*\bsubscri|\
 _SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
                     r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
 _SITE_SETTINGS = {"platform": str, "sites": list, "timezone": str, "skip_categories": list}
-_LIST_SETTINGS = ("remove_lines", "keep_lines", "sales_links", "promo_links", "button_links")
+_LIST_SETTINGS = ("remove_lines", "keep_lines", "sales_links", "promo_links", "button_links",
+                  "leave_out_images", "leave_out_credits")
 
 
 def _normalized(words: str) -> str:
@@ -47,6 +51,26 @@ def _compile_phrase(phrase: str, where: str) -> re.Pattern:
                             "much. Write the words the line must contain.")
     pattern = re.escape(normalized).replace(r"\ \*", r"(?:\W.*)?").replace(r"\*", ".*").replace(r"\#", r"\d+")
     return re.compile(pattern)
+
+
+def _has_letters(words: str) -> bool:
+    return re.search(r"[^\W\d_]", words) is not None
+
+
+def _compile_file_name(pattern: str, where: str) -> tuple[str, re.Pattern]:
+    """A file-name pattern as written and as a regex: ``*`` is any characters, capitals are ignored."""
+    pattern = pattern.strip()
+    if not _has_letters(pattern):
+        raise SiteFileError(f"site rules file {where}: the image pattern {pattern!r} has no letters, so it could "
+                            "match too many images. Write part of the file name, like \"GettyImages-*\".")
+    return pattern, re.compile(re.escape(pattern).replace(r"\*", ".*"), re.I)
+
+
+def _credit(words: str, where: str) -> str:
+    if not _has_letters(words):
+        raise SiteFileError(f"site rules file {where}: the credit {words!r} has no words, so it could match too "
+                            "many captions. Write the words the caption must contain, like \"Getty Images\".")
+    return " ".join(words.split())
 
 
 def _is_at(address: str, entries: tuple[str, ...]) -> bool:
@@ -68,10 +92,31 @@ class SiteRules:
     remove_all_buttons: bool = False
     timezone: ZoneInfo | None = None  # the blog's own time zone, for platforms whose dates are UTC
     skip_categories: tuple[str, ...] = ()  # casefolded; a post in any of these is left out of the book
+    # Images whose rights for ebooks aren't cleared (#51): file-name patterns (as written, compiled),
+    # and words that credit them in a caption (as written).
+    leave_out_images: tuple[tuple[str, re.Pattern], ...] = ()
+    leave_out_credits: tuple[str, ...] = ()
 
     def leave_out(self, categories: list[str]) -> str | None:
         """The first of ``categories`` this blog leaves out of books, as the post names it, or None."""
         return next((c for c in categories if c.casefold() in self.skip_categories), None)
+
+    def image_left_out(self, src: str, caption: str = "") -> str | None:
+        """Why this blog leaves the image at ``src`` out of books, naming the rule that matched, or None.
+
+        A ``leave_out_images`` pattern matches the whole file name (the last part of the address,
+        without its query); a ``leave_out_credits`` entry matches anywhere in ``caption``. Both
+        ignore capitals.
+        """
+        name = unquote(urlsplit(src.strip()).path.rsplit("/", 1)[-1])
+        for written, pattern in self.leave_out_images:
+            if name and pattern.fullmatch(name):
+                return f"its file name matches {written}"
+        caption = " ".join(caption.split()).casefold()
+        for credit in self.leave_out_credits:
+            if credit.casefold() in caption:
+                return f"its caption credits {credit}"
+        return None
 
     def is_sales_link(self, href: str) -> bool:
         return _is_at(href, self.sales_links)
@@ -127,12 +172,17 @@ def load_site_rules(name: str, sites_dir: Path | None = None) -> SiteRules:
     def addresses(setting: str) -> tuple[str, ...]:
         return tuple(a.strip().casefold() for a in own.get(setting, []))
 
+    def both(setting: str) -> list[str]:
+        return [*defaults.get(setting, []), *own.get(setting, [])]
+
     return SiteRules(remove_lines=phrases("remove_lines"), keep_lines=phrases("keep_lines"),
                      sales_links=addresses("sales_links"), promo_links=addresses("promo_links"),
                      button_links=addresses("button_links"),
                      remove_all_buttons=own.get("remove_all_buttons", False),
                      timezone=ZoneInfo(own["timezone"]) if "timezone" in own else None,
-                     skip_categories=tuple(c.strip().casefold() for c in own.get("skip_categories", [])))
+                     skip_categories=tuple(c.strip().casefold() for c in own.get("skip_categories", [])),
+                     leave_out_images=tuple(_compile_file_name(p, where) for p in both("leave_out_images")),
+                     leave_out_credits=tuple(_credit(c, where) for c in both("leave_out_credits")))
 
 
 # ---- Blocks ----
@@ -184,6 +234,42 @@ def _marker(soup, block, words: str, kind: str):
 
 
 # ---- The rules, in the order the base processor applies them ----
+
+def leave_out_images(soup, rules: SiteRules) -> None:
+    """Remove images whose rights for ebooks aren't cleared (the blog's ``leave_out_images`` and
+    ``leave_out_credits``), each with its whole figure, caption included, and any wrapper left empty.
+    A link card keeps its words and loses only the picture. Markers are left for the report."""
+    if not (rules.leave_out_images or rules.leave_out_credits):
+        return
+    markers = []
+    for img in soup.find_all("img"):
+        if img.parent is None:  # went with a figure removed earlier
+            continue
+        figure = img.find_parent("figure")
+        is_card = figure is not None and CARD_CLASS in figure.get("class", [])
+        caption = figure.find("figcaption") if figure is not None and not is_card else None
+        words = " ".join(caption.get_text(" ", strip=True).split()) if caption else ""
+        src = img.get("src", "")
+        if not (why := rules.image_left_out(src, words)):
+            continue
+        attrs = {IMAGE_LEFT_OUT: why, IMAGE_LEFT_OUT_URL: src}
+        if words:
+            attrs[IMAGE_LEFT_OUT_CAPTION] = words
+        markers.append(soup.new_tag("span", attrs=attrs))
+        # A figure of several images goes whole only when its caption credits them all.
+        whole = figure is not None and not is_card and (why.startswith("its caption") or len(figure.find_all("img")) == 1)
+        _remove_with_empty_wrappers(figure if whole else img)
+    soup.extend(markers)
+
+
+def _remove_with_empty_wrappers(tag) -> None:
+    parent = tag.parent
+    tag.extract()
+    while parent is not None and parent.parent is not None and parent.name != "figure" \
+            and not parent.get_text(strip=True) and parent.find(["img", "video", "audio", "hr", "br"]) is None:
+        parent, empty = parent.parent, parent
+        empty.extract()
+
 
 def is_sales_button(button, rules: SiteRules) -> bool:
     link = button.find("a", href=True)

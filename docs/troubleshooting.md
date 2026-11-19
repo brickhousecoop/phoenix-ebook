@@ -180,6 +180,11 @@ A content page from a Word file (for example the foreword) had pictures in it. T
 **`N posts were left out: they're in categories this blog leaves out of books; see warnings above`**
 The post is in one of the categories the blog's [rules file](../README.md#blog-rule-files) keeps out of books (`skip_categories`), such as podcasts or games that can't work on a page. The rest of the book was built without it. To include it anyway, the blog's file has to change.
 
+### `image-rights-not-cleared`
+
+**`N photos were left out: their rights for ebooks aren't cleared; see warnings above`**
+The blog's [rules file](../README.md#blog-rule-files) keeps these photos out of books until their rights for ebooks are settled; for Defector, that's Getty Images photos. Each warning names the rule that matched: the photo's file name (`leave_out_images`, e.g. `GettyImages-*`) or a credit in its caption (`leave_out_credits`, e.g. `Getty Images`). The photo and its caption are gone from the chapter with nothing in their place, and it was never downloaded. Nothing needs doing. To put the photos back, delete those two settings from the blog's file in `phoenix_ebook/sites/`; to leave out another agency's, add an entry to them.
+
 ### `dates-in-utc`
 
 **`N blogs have no time zone, so post dates are in UTC; set timezone in their rules file`**

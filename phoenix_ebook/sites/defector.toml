@@ -6,3 +6,7 @@ sites = ["defector.com"]
 timezone = "America/New_York"
 # Posts that don't belong in a book (games, podcasts); a post asked for anyway is reported.
 skip_categories = ["Podcasts", "Crosswords"]
+
+# Photos whose rights for ebooks aren't cleared yet (#51): left out of books and reported.
+leave_out_images = ["GettyImages-*"]     # file-name patterns; * is any characters
+leave_out_credits = ["Getty Images"]     # words in a caption, ignoring capitals

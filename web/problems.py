@@ -18,6 +18,7 @@ GUIDE_URL = "https://github.com/brickhousecoop/phoenix-ebook/blob/main/docs/trou
 
 LABELS = {
     "image-download-failed": "Image left out",
+    "image-rights-not-cleared": "Photo left out: rights not cleared",
     "image-missing-alt": "No alt text",
     "image-suspicious-alt": "Unhelpful alt text",
     "alt-override-unused": "Alt-text entry not used",

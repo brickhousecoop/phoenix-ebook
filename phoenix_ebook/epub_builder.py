@@ -21,7 +21,8 @@ from PIL import Image
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
 from phoenix_ebook.canonical import (MARKUP_UNKNOWN, CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
                                      CALL_TO_ACTION_REMOVED_AS, CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
-                                     EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, LINK_REASON, LINK_REMOVED,
+                                     EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, IMAGE_LEFT_OUT, IMAGE_LEFT_OUT_CAPTION,
+                                     IMAGE_LEFT_OUT_URL, LINK_REASON, LINK_REMOVED,
                                      LINK_REPAIRED, LINK_UNLINKED, OEMBED_TEXT, THUMBNAIL_FALLBACK,
                                      THUMBNAIL_LOOKUP)
 from phoenix_ebook.content import check_content_file, load_content
@@ -498,6 +499,16 @@ def _report_link_changes(soup, post: Post, problems: list[BuildProblem]) -> None
         span.unwrap()
 
 
+def _report_images_left_out(soup, post: Post, problems: list[BuildProblem]) -> None:
+    """Report each image the blog's rules left out because its rights aren't cleared (#51); remove the markers."""
+    for marker in soup.find_all(attrs={IMAGE_LEFT_OUT: True}):
+        problems.append(BuildProblem(kind="image-rights-not-cleared", post_slug=post.slug,
+                                     url=marker.get(IMAGE_LEFT_OUT_URL) or None,
+                                     detail=f"photo left out, its rights for ebooks aren't cleared: {marker[IMAGE_LEFT_OUT]}",
+                                     caption=marker.get(IMAGE_LEFT_OUT_CAPTION)))
+        marker.decompose()
+
+
 def _report_unknown_markup(soup, post: Post, problems: list[BuildProblem], seen: set[str]) -> None:
     """Report each kind of markup a platform didn't know (and unwrapped) once per book; remove the markers."""
     for marker in soup.find_all(attrs={MARKUP_UNKNOWN: True}):
@@ -809,6 +820,7 @@ def build(
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
         processor.clean(soup, post)
+        _report_images_left_out(soup, post, problems)
         _report_calls_to_action(soup, post, problems)
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)
 
