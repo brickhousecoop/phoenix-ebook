@@ -14,12 +14,12 @@ from typing import Callable, Iterable
 from urllib.parse import urljoin, urlparse
 
 import requests
-from bs4 import BeautifulSoup, Comment
+from bs4 import BeautifulSoup, Comment, NavigableString
 from ebooklib import epub
 from PIL import Image
 
 from phoenix_ebook.alt_text import normalize_image_url, suspicious_alt
-from phoenix_ebook.canonical import (MARKUP_UNKNOWN, CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
+from phoenix_ebook.canonical import (MARKUP_UNKNOWN, MEDIA_ID, IMAGE_CREDIT, IMAGE_UNCHECKED, CREDIT_CLASS, CALL_TO_ACTION, CALL_TO_ACTION_BANNER, CALL_TO_ACTION_REMOVED,
                                      CALL_TO_ACTION_REMOVED_AS, CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, DECORATIVE, EMBED_REMOVED,
                                      EMBED_SRC, EMBED_UNKNOWN, FEATURE_IMAGE, IMAGE_LEFT_OUT, IMAGE_LEFT_OUT_CAPTION,
                                      IMAGE_LEFT_OUT_URL, LINK_REASON, LINK_REMOVED,
@@ -30,7 +30,7 @@ from phoenix_ebook.credits import credits_section
 from phoenix_ebook.dates import format_date as _format_date
 from phoenix_ebook.errors import InvalidBookSpec, MissingContentFile, OutputError, PostNotFound
 from phoenix_ebook.images import ImageFetchError, fetch_image, optimize_image, validate_image
-from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post, Progress, SourceSpec
+from phoenix_ebook.models import Author, BookSpec, BuildProblem, BuildResult, Post, PostImages, Progress, SourceSpec
 from phoenix_ebook.platforms.base import Platform
 from phoenix_ebook.processors.base import HtmlProcessor
 
@@ -707,6 +707,54 @@ def _insert_feature_image(soup, post: Post, image_base_url: str) -> None:
     soup.insert(0, figure)
 
 
+def _add_image_details(soup, images: PostImages | None) -> None:
+    """Give the post's images what the blog's media library says about them (#51): alt text where
+    an image has none, a lead image's caption, and the credit, shown in the caption unless it's
+    already there. An image the library had no answer for is marked (``data-image-unchecked``)."""
+    if images is None:
+        return
+    for img in soup.find_all("img"):
+        figure = img.find_parent("figure")
+        is_lead = figure is not None and figure.has_attr(FEATURE_MARK)
+        if not is_lead and not img.has_attr(MEDIA_ID):
+            continue
+        details = images.lead if is_lead else images.images.get(img[MEDIA_ID])
+        if details is None:
+            img[IMAGE_UNCHECKED] = ""
+            continue
+        if details.alt and not (img.get("alt") or "").strip():
+            img["alt"] = details.alt
+        if details.credit:
+            img[IMAGE_CREDIT] = details.credit
+        if figure is None or CARD_CLASS in figure.get("class", []):
+            continue
+        caption = figure.find("figcaption")
+        if caption is None and is_lead and details.caption:
+            caption = soup.new_tag("figcaption")
+            words = BeautifulSoup(details.caption, "html.parser")
+            for wrapper in words.find_all(["p", "div"]):
+                wrapper.insert_after(" ")
+                wrapper.unwrap()
+            caption.extend(list(words.contents))
+            while caption.contents and isinstance(caption.contents[-1], NavigableString) and not caption.contents[-1].strip():
+                caption.contents[-1].extract()
+            if caption.contents:
+                figure.append(caption)
+            else:
+                caption = None
+        shown = " ".join(caption.get_text(" ").split()) if caption is not None else ""
+        if not details.credit or details.credit.casefold() in shown.casefold():
+            continue
+        credit = soup.new_tag("span", attrs={"class": CREDIT_CLASS})
+        if caption is None:
+            caption = soup.new_tag("figcaption")
+            figure.append(caption)
+        credit.string = f"({details.credit})" if shown else details.credit
+        if shown:
+            caption.append(" ")
+        caption.append(credit)
+
+
 def build(
     spec: BookSpec,
     posts: Iterable[Post],
@@ -720,7 +768,9 @@ def build(
     """Assemble an EPUB from already-fetched posts.
 
     Images that can't be fetched as valid images are left out of the book and
-    reported in BuildResult.problems; they never fail the build. ``platform``
+    reported in BuildResult.problems; they never fail the build. For a blog whose
+    rules file has ``image_details``, the platform is asked for image credits and
+    alt text first, and ``SourceUnreachable`` is raised if it can't be. ``platform``
     supplies platform-specific image-URL rules (e.g. Ghost's size variants) for
     matching alt-text overrides; without it the generic rule is used.
     ``progress`` is called as each chapter starts (stage "post") and before the
@@ -730,6 +780,9 @@ def build(
     problems: list[BuildProblem] = []
     posts = _choose_posts(list(posts), processor, platform, problems)
     session = session or requests.Session()
+    image_details: dict[str, PostImages] = {}
+    if platform is not None and processor.rules.image_details:
+        image_details = platform.image_details(session, processor.rules.image_details, posts)
 
     book = epub.EpubBook()
     _add_metadata(book, spec, posts)
@@ -819,7 +872,11 @@ def build(
         chapter_slug = sanitize_filename(post.slug)
         soup = BeautifulSoup(post.html, "html.parser")
         _insert_feature_image(soup, post, image_base_url)
+        _add_image_details(soup, image_details.get(post.slug))
         processor.clean(soup, post)
+        for img in soup.find_all("img"):
+            for mark in (MEDIA_ID, IMAGE_CREDIT, IMAGE_UNCHECKED):
+                img.attrs.pop(mark, None)
         _report_images_left_out(soup, post, problems)
         _report_calls_to_action(soup, post, problems)
         contents_labels[f"{chapter_slug}.xhtml"] = processor.display_title(post)

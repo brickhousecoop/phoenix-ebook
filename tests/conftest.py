@@ -187,6 +187,17 @@ class FakeSession(requests.Session):
         return outcome
 
 
+    def post(self, url, **kwargs):
+        """Like ``get``; an outcome may also be a function of the request's ``json``, returning a response."""
+        self.log.append((url, kwargs))
+        self.calls[url] = self.calls.get(url, 0) + 1
+        outcomes = self.routes[url]
+        outcome = outcomes[min(self.calls[url], len(outcomes)) - 1]
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome(kwargs.get("json")) if callable(outcome) else outcome
+
+
 def ok(body: bytes, content_type: str = "image/png") -> FakeResponse:
     return FakeResponse(200, body, content_type)
 

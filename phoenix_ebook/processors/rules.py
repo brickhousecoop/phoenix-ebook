@@ -18,8 +18,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from bs4 import NavigableString
 
 from phoenix_ebook.canonical import (CALL_TO_ACTION, CALL_TO_ACTION_REMOVED, CALL_TO_ACTION_REMOVED_AS,
-                                     CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, FEATURE_IMAGE, IMAGE_LEFT_OUT,
-                                     IMAGE_LEFT_OUT_CAPTION, IMAGE_LEFT_OUT_URL, mark_call_to_action)
+                                     CALL_TO_ACTION_REMOVED_URL, CARD_CLASS, FEATURE_IMAGE, IMAGE_CREDIT,
+                                     IMAGE_LEFT_OUT, IMAGE_LEFT_OUT_CAPTION, IMAGE_LEFT_OUT_URL, IMAGE_UNCHECKED,
+                                     mark_call_to_action)
 from phoenix_ebook.errors import SiteFileError
 
 SITES_DIR = Path(__file__).parent.parent / "sites"
@@ -35,7 +36,7 @@ _PAYWALL_LINE = re.compile(r"\b(?:read|unlock)\b.{0,10}\bthe rest\b.*\bsubscri|\
                            re.I)
 _SHARE = re.compile(r"^https?://(?:bsky\.app/intent/|(?:www\.)?(?:twitter|x)\.com/intent/|"
                     r"(?:www\.)?facebook\.com/sharer|(?:www\.)?threads\.net/intent/)", re.I)
-_SITE_SETTINGS = {"platform": str, "sites": list, "timezone": str, "skip_categories": list}
+_SITE_SETTINGS = {"platform": str, "sites": list, "timezone": str, "skip_categories": list, "image_details": str}
 _LIST_SETTINGS = ("remove_lines", "keep_lines", "sales_links", "promo_links", "button_links",
                   "leave_out_images", "leave_out_credits")
 
@@ -96,26 +97,29 @@ class SiteRules:
     # and words that credit them in a caption (as written).
     leave_out_images: tuple[tuple[str, re.Pattern], ...] = ()
     leave_out_credits: tuple[str, ...] = ()
+    image_details: str | None = None  # the blog's media-library API, asked for credits and alt text
 
     def leave_out(self, categories: list[str]) -> str | None:
         """The first of ``categories`` this blog leaves out of books, as the post names it, or None."""
         return next((c for c in categories if c.casefold() in self.skip_categories), None)
 
-    def image_left_out(self, src: str, caption: str = "") -> str | None:
+    def image_left_out(self, src: str, caption: str = "", credit: str = "") -> str | None:
         """Why this blog leaves the image at ``src`` out of books, naming the rule that matched, or None.
 
         A ``leave_out_images`` pattern matches the whole file name (the last part of the address,
-        without its query); a ``leave_out_credits`` entry matches anywhere in ``caption``. Both
-        ignore capitals.
+        without its query); a ``leave_out_credits`` entry matches anywhere in ``caption`` or in
+        ``credit`` (the media library's). All ignore capitals.
         """
         name = unquote(urlsplit(src.strip()).path.rsplit("/", 1)[-1])
         for written, pattern in self.leave_out_images:
             if name and pattern.fullmatch(name):
                 return f"its file name matches {written}"
-        caption = " ".join(caption.split()).casefold()
-        for credit in self.leave_out_credits:
-            if credit.casefold() in caption:
-                return f"its caption credits {credit}"
+        caption, credit = " ".join(caption.split()).casefold(), " ".join(credit.split()).casefold()
+        for words in self.leave_out_credits:
+            if words.casefold() in caption:
+                return f"its caption credits {words}"
+            if words.casefold() in credit:
+                return f"it's credited to {words}"
         return None
 
     def is_sales_link(self, href: str) -> bool:
@@ -150,6 +154,10 @@ def read_site_file(path: Path) -> dict:
         raise SiteFileError(f"site rules file {path.name}: remove_all_buttons must be true or false.")
     if not isinstance(data.get("platform", ""), str):
         raise SiteFileError(f"site rules file {path.name}: platform must be a name in quotes.")
+    if "image_details" in data and not (isinstance(data["image_details"], str)
+                                        and re.match(r"https://[^/\s]+\.[^/\s]+/\S*$", data["image_details"])):
+        raise SiteFileError(f"site rules file {path.name}: image_details must be the https:// address of the blog's "
+                            'GraphQL API in quotes, like "https://example.com/graphql".')
     if "timezone" in data:
         try:
             ZoneInfo(data["timezone"] if isinstance(data["timezone"], str) else "")
@@ -182,7 +190,8 @@ def load_site_rules(name: str, sites_dir: Path | None = None) -> SiteRules:
                      timezone=ZoneInfo(own["timezone"]) if "timezone" in own else None,
                      skip_categories=tuple(c.strip().casefold() for c in own.get("skip_categories", [])),
                      leave_out_images=tuple(_compile_file_name(p, where) for p in both("leave_out_images")),
-                     leave_out_credits=tuple(_credit(c, where) for c in both("leave_out_credits")))
+                     leave_out_credits=tuple(_credit(c, where) for c in both("leave_out_credits")),
+                     image_details=own.get("image_details"))
 
 
 # ---- Blocks ----
@@ -238,7 +247,8 @@ def _marker(soup, block, words: str, kind: str):
 def leave_out_images(soup, rules: SiteRules) -> None:
     """Remove images whose rights for ebooks aren't cleared (the blog's ``leave_out_images`` and
     ``leave_out_credits``), each with its whole figure, caption included, and any wrapper left empty.
-    A link card keeps its words and loses only the picture. Markers are left for the report."""
+    A link card keeps its words and loses only the picture. With ``leave_out_credits``, an image whose
+    credit the media library couldn't give (``data-image-unchecked``) goes too. Markers are left for the report."""
     if not (rules.leave_out_images or rules.leave_out_credits):
         return
     markers = []
@@ -250,7 +260,10 @@ def leave_out_images(soup, rules: SiteRules) -> None:
         caption = figure.find("figcaption") if figure is not None and not is_card else None
         words = " ".join(caption.get_text(" ", strip=True).split()) if caption else ""
         src = img.get("src", "")
-        if not (why := rules.image_left_out(src, words)):
+        why = rules.image_left_out(src, words, img.get(IMAGE_CREDIT, ""))
+        if not why and rules.leave_out_credits and img.has_attr(IMAGE_UNCHECKED):
+            why = "its credit couldn't be checked (the blog's media library had no answer for it)"
+        if not why:
             continue
         attrs = {IMAGE_LEFT_OUT: why, IMAGE_LEFT_OUT_URL: src}
         if words:

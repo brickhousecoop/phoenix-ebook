@@ -63,6 +63,9 @@ The WordPress site answered with an error, often because it's busy or down for a
 **`error: <site>'s feed didn't answer with a feed`** (or `with an RSS feed`)
 Something answered, but not a feed: usually the stored address is a web page, not the private feed's address. Store the feed address again (see [Your private feed](#your-private-feed-wordpress)).
 
+**`error: the blog's image credits can't be checked right now (<host>: …), and it leaves some images out by their credit, so no book was built. Try again in a few minutes.`**
+The blog's rules file names a second source for image credits and alt text (`image_details`; for Defector, its public API at `lede-admin.defector.com`), and it couldn't be reached or answered with an error. The blog leaves some photos out by their credit, and without the credits the build can't tell which, so it stops rather than build a book with its pictures stripped or with photos that shouldn't be in it. Nothing is wrong with your posts or your key: build again in a few minutes. Behind a firewall, allow the host in the message.
+
 ### Posts
 
 **`error: 1 post not found on <site>: "…"`** (or `N posts not found`)
@@ -183,7 +186,9 @@ The post is in one of the categories the blog's [rules file](../README.md#blog-r
 ### `image-rights-not-cleared`
 
 **`N photos were left out: their rights for ebooks aren't cleared; see warnings above`**
-The blog's [rules file](../README.md#blog-rule-files) keeps these photos out of books until their rights for ebooks are settled; for Defector, that's Getty Images photos. Each warning names the rule that matched: the photo's file name (`leave_out_images`, e.g. `GettyImages-*`) or a credit in its caption (`leave_out_credits`, e.g. `Getty Images`). The photo and its caption are gone from the chapter with nothing in their place, and it was never downloaded. Nothing needs doing. To put the photos back, delete those two settings from the blog's file in `phoenix_ebook/sites/`; to leave out another agency's, add an entry to them.
+The blog's [rules file](../README.md#blog-rule-files) keeps these photos out of books until their rights for ebooks are settled; for Defector, that's Getty Images photos. Each warning names the rule that matched: the photo's file name (`leave_out_images`, e.g. `GettyImages-*`) or a credit in its caption (`leave_out_credits`, e.g. `Getty Images`). For a blog with `image_details`, the credit comes from the blog's media library and counts even when the website's caption is all that shows it. The photo and its caption are gone from the chapter with nothing in their place, and it was never downloaded. Nothing needs doing.
+
+A warning ending **`its credit couldn't be checked`** is different: the media library had no answer for that one image (it may have been deleted or replaced there), so it's left out to be safe. If the book needs it, ask the blog whether the image is still in their library. To put the photos back, delete those two settings from the blog's file in `phoenix_ebook/sites/`; to leave out another agency's, add an entry to them.
 
 ### `dates-in-utc`
 

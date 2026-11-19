@@ -191,3 +191,165 @@ def test_mistakes_in_the_settings_are_named(tmp_path, text, problem):
     with pytest.raises(SiteFileError) as caught:
         rules_from(tmp_path, text)
     assert problem in str(caught.value) and "blog.toml" in str(caught.value)
+
+
+# ---------------------------------------------------------------- credits from the blog's media library
+
+import json  # noqa: E402
+import re  # noqa: E402
+
+import requests  # noqa: E402
+
+from conftest import FakeResponse, FakeSession  # noqa: E402
+from phoenix_ebook.errors import SourceUnreachable  # noqa: E402
+from phoenix_ebook.models import ImageDetails, PostImages  # noqa: E402
+from phoenix_ebook.platforms.wordpress_feed import WordPressFeedPlatform  # noqa: E402
+
+API = "https://lede-admin.defector.com/graphql"
+LEAD = "https://img.example/photo-collage.png.jpeg?w=1600"
+BODY = "https://img.example/track.jpeg"
+
+
+def graphql(posts: dict | None = None, media: dict | None = None, *, without: tuple[str, ...] = ()):
+    """An API that knows these posts' lead images (by slug) and media items (by id); others are null."""
+    def answer(request):
+        query = request["query"]
+        for field in without:
+            if field in query:
+                return FakeResponse(200, json.dumps({"errors": [{"message": f'Cannot query field "{field}" on type '
+                                                                            '"MediaItem".'}]}).encode())
+        data = {}
+        for alias, slug in re.findall(r'(p\d+): post\(id: "([^"]+)"', query):
+            data[alias] = {"featuredImage": {"node": posts[slug]}} if posts and slug in posts else None
+        for alias, media_id in re.findall(r"(m\d+): mediaItem\(id: (\d+)", query):
+            data[alias] = (media or {}).get(media_id)
+        return FakeResponse(200, json.dumps({"data": data}).encode())
+    return answer
+
+
+def details_book(build_book, body, posts=None, media=None, *, lead=LEAD, images=(), **kwargs):
+    routes = {API: [graphql(posts, media, **kwargs)], **{url: [ok(png())] for url in images}}
+    return build_book(post(body, feature_image=lead), routes, processor="defector", platform=WordPressFeedPlatform())
+
+
+def left_out(built) -> list[tuple[str, str]]:
+    return [(p.url.rsplit("/", 1)[-1], p.detail.split(": ", 1)[1]) for p in built.result.problems
+            if p.kind == "image-rights-not-cleared"]
+
+
+def test_wordpress_images_keep_their_media_id():
+    html = WordPressFeedPlatform().normalize_html('<figure class="wp-block-image"><img src="a.png" '
+                                                  'class="wp-image-77 size-large"/></figure>')
+    assert html == '<figure><img data-media-id="77" src="a.png"/></figure>'
+
+
+def test_credit_and_alt_text_are_shown_on_a_lead_image(build_book):
+    built = details_book(build_book, "<p>Body.</p>", images=[LEAD],
+                         posts={"p": {"altText": "A collage", "caption": None, "credit": "Art by Chris Thompson"}})
+    chapter = built.chapter()
+    assert 'alt="A collage"' in chapter
+    assert '<figcaption><span class="credit">Art by Chris Thompson</span></figcaption>' in chapter
+    assert not [p for p in built.result.problems if p.kind in ("image-missing-alt", "image-rights-not-cleared")]
+    assert "data-media-id" not in chapter and "data-image-" not in chapter
+
+
+def test_a_lead_image_credited_to_getty_is_left_out_whatever_its_file_name(build_book):
+    built = details_book(build_book, "<p>Body.</p>", posts={"p": {
+        "altText": "A collage", "caption": None, "credit": "Jonathan Kozub/NHLI and Dimitar Dilkoff/AFP via Getty Images"}})
+    assert left_out(built) == [("photo-collage.png.jpeg?w=1600", "its caption credits Getty Images")]
+    assert built.image_names() == [] and "<figure" not in built.chapter()
+    assert [url for url, _ in built.session.log] == [API]  # asked once, and the photo never downloaded
+
+
+def test_a_lead_image_gets_its_library_caption_then_its_credit(build_book):
+    built = details_book(build_book, "<p>Body.</p>", images=[LEAD],
+                         posts={"p": {"altText": "", "caption": "<p>That&#8217;s the lake creature.</p>\n",
+                                      "credit": "Screenshot: TMJ4 &amp; friends"}})
+    assert ('<figcaption>That’s the lake creature. <span class="credit">(Screenshot: TMJ4 &amp; friends)</span>'
+            "</figcaption>") in built.chapter()
+
+
+def test_images_in_a_post_get_credits_by_media_id(build_book):
+    body = (f'<figure><img src="{BODY}" data-media-id="7" alt=""/></figure>'
+            '<figure><img src="https://img.example/b.png" data-media-id="8" alt="Own words"/>'
+            "<figcaption>Photo: Jane Doe/AP</figcaption></figure>"
+            '<figure><img src="https://img.example/c.png" data-media-id="9"/><figcaption>A grid.</figcaption></figure>'
+            '<figure><img src="https://img.example/d.png" data-media-id="10"/></figure>')
+    media = {"7": {"altText": "A bike", "caption": "", "credit": "Loic Venance/AFP via Getty Images"},
+             "8": {"altText": "Library words", "caption": "<p>ignored</p>", "credit": "jane doe/ap"},
+             "9": {"altText": "", "caption": "", "credit": "Illustration: Jim Cooke"},
+             "10": {"altText": "", "caption": "", "credit": ""}}
+    built = details_book(build_book, body, media=media, lead=None,
+                         images=["https://img.example/b.png", "https://img.example/c.png", "https://img.example/d.png"])
+    chapter = built.chapter()
+    assert left_out(built) == [("track.jpeg", "its caption credits Getty Images")]
+    assert 'alt="Own words"' in chapter and "<figcaption>Photo: Jane Doe/AP</figcaption>" in chapter  # already credited
+    assert '<figcaption>A grid. <span class="credit">(Illustration: Jim Cooke)</span></figcaption>' in chapter
+    assert chapter.count("<figcaption") == 2 and "ignored" not in chapter  # no credit on file: kept, no caption
+    assert len(built.image_names()) == 3
+
+
+def test_an_image_not_in_the_library_is_kept_without_a_warning(build_book):
+    hotlinked = "https://pbs.twimg.example/x.jpg"
+    built = details_book(build_book, f'<figure><img src="{hotlinked}" alt="A tweet"/></figure>', lead=None, images=[hotlinked])
+    assert len(built.image_names()) == 1 and left_out(built) == []
+    assert built.session.log == [(hotlinked, built.session.log[0][1])]  # nothing to ask the API
+
+
+def test_an_image_the_api_has_no_answer_for_is_left_out_with_its_own_warning(build_book):
+    body = (f'<figure><img src="{BODY}" data-media-id="7"/></figure>'
+            '<figure><img src="https://img.example/b.png" data-media-id="8"/></figure>')
+    built = details_book(build_book, body, posts={}, media={"8": {"altText": "", "caption": "", "credit": ""}},
+                         images=["https://img.example/b.png"])
+    assert [(name, why.split(" (")[0]) for name, why in left_out(built)] == [
+        ("photo-collage.png.jpeg?w=1600", "its credit couldn't be checked"), ("track.jpeg", "its credit couldn't be checked")]
+    assert len(built.image_names()) == 1
+
+
+@pytest.mark.parametrize("outcome, why", [
+    (requests.ConnectionError("https://lede-admin.defector.com/graphql refused"), "ConnectionError"),
+    (requests.Timeout(), "Timeout"),
+    (FakeResponse(503, b"Service Unavailable"), "HTTP 503"),
+    (FakeResponse(200, b"<html>maintenance</html>"), "didn't answer with image details"),
+    (FakeResponse(200, b'{"errors": [{"message": "Internal server error"}]}'), "didn't answer with image details"),
+])
+def test_an_outage_stops_the_build(build_book, tmp_path, outcome, why):
+    with pytest.raises(SourceUnreachable) as caught:
+        build_book(post(feature_image=LEAD), {API: [outcome]}, processor="defector", platform=WordPressFeedPlatform())
+    message = str(caught.value)
+    assert why in message and "lede-admin.defector.com" in message and "/graphql" not in message
+    assert "no book was built. Try again in a few minutes." in message
+    assert not list(tmp_path.glob("*.epub"))
+
+
+def test_an_api_without_credits_still_gives_alt_text():
+    session = FakeSession({API: [graphql({"p": {"altText": "A collage", "caption": None}}, without=("credit",))]})
+    found = WordPressFeedPlatform().image_details(session, API, [post(feature_image=LEAD), post(slug="q", feature_image=LEAD)])
+    assert found["p"] == PostImages(lead=ImageDetails(alt="A collage")) and found["q"] == PostImages()
+    assert len(session.log) == 2  # asked again without credit, once
+
+
+def test_posts_are_asked_about_ten_at_a_time():
+    posts = [post(f'<img src="a.png" data-media-id="{n}"/>', slug=f"s{n}") for n in range(23)]
+    session = FakeSession({API: [graphql(media={str(n): {"credit": f"C{n}"} for n in range(23)})]})
+    found = WordPressFeedPlatform().image_details(session, API, posts)
+    assert len(session.log) == 3 and len(found) == 23
+    assert found["s22"].images == {"22": ImageDetails(credit="C22")} and found["s22"].lead is None
+
+
+def test_a_blog_without_the_setting_is_never_asked(build_book):
+    body = '<figure><img src="https://img.example/b.png" data-media-id="8"/></figure>'
+    built = build_book(post(body), {"https://img.example/b.png": [ok(png())]}, platform=WordPressFeedPlatform())
+    assert [url for url, _ in built.session.log] == ["https://img.example/b.png"]
+    assert "data-media-id" not in built.chapter()
+
+
+def test_only_defector_has_the_setting():
+    assert load_site_rules("defector").image_details == API
+    assert all(load_site_rules(name).image_details is None for name in ("generic", "flaminghydra", "hellworld"))
+
+
+@pytest.mark.parametrize("value", ['"lede-admin.defector.com/graphql"', '"http://example.com/graphql"', '""', "true"])
+def test_the_setting_must_be_an_https_address(tmp_path, value):
+    with pytest.raises(SiteFileError, match="image_details must be the https:// address"):
+        rules_from(tmp_path, f"image_details = {value}")

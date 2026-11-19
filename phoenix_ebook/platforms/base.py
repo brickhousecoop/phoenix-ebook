@@ -8,7 +8,7 @@ import requests
 
 from phoenix_ebook.alt_text import normalize_image_url
 from phoenix_ebook.errors import InvalidBookSpec
-from phoenix_ebook.models import Post
+from phoenix_ebook.models import Post, PostImages
 
 
 class Platform(ABC):
@@ -40,6 +40,16 @@ class Platform(ABC):
         Used to match alt-text overrides. Default: drop the query string and fragment.
         """
         return normalize_image_url(url)
+
+    def image_details(self, session: requests.Session, endpoint: str, posts: list[Post]) -> dict[str, PostImages]:
+        """Credits, alt text and captions for the images of ``posts``, by post slug, from the blog's
+        media library at ``endpoint`` (a blog's ``image_details`` setting, phoenix_ebook/sites/).
+
+        Called once per book, after the posts are fetched, only for a blog with that setting.
+        Raise ``SourceUnreachable`` if the library can't be asked: the build stops, because a
+        blog may leave images out by their credit. Default: no details ({}).
+        """
+        return {}
 
     def thumbnail_url(self, url: str, width: int = 300) -> str:
         """A small version of the image at ``url``, for previews. Default: the image itself."""

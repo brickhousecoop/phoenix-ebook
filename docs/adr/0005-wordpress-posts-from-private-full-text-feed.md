@@ -18,3 +18,7 @@ The feed gives each post's full text (`content:encoded`), every co-author (`dc:c
 - What a blog leaves out by category (`skip_categories`: podcasts, crosswords) is data in its rules file, and each skipped post is reported.
 - Block HTML is converted to canonical chapter HTML in the platform (ADR 0001); a block it doesn't know keeps its contents and is reported once per book, so new markup shows up.
 - Other WordPress blogs work if their feed has the full text and accepts `name=`. A plugin that puts its token somewhere else still works, since the address is kept as given.
+
+## Later: image credits and alt text from a second source (#51)
+
+The feed has no credit for any image and no alt text or caption for lead images, and Defector leaves Getty Images photos out of books by their credit. So a blog's rules file can name its public WPGraphQL API (`image_details`), which each build asks about the posts' images: lead images by the post's slug, images in the text by their media id. Posts still come only from the private feed. The API needs no key, is asked for nothing but image fields, and `credit` is a field Lede adds, so the code copes with an API that lacks it. It's an API the blog's own website uses, not one promised to us: if it can't be reached the build stops, rather than build a book that can't tell which photos to leave out.

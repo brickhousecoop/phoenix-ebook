@@ -88,6 +88,17 @@ The shared cleanup (`phoenix_ebook/links.py`, run by every processor) marks each
 
 Section ids are plain ASCII (`día-de-los-muertos` → `dia-de-los-muertos`); links to a renamed id follow it and are reported as repaired.
 
+## Image details
+
+For a blog whose media library is asked about its images (`image_details` in its rules file; #51), a platform keeps each image's library id, `<img data-media-id="14033" …>`, so `Platform.image_details` can ask for it. Before cleanup the builder adds what came back: alt text where the image has none, and the credit, as `data-image-credit` on the image and, in a figure, in its caption unless the caption already has those words:
+
+```html
+<figure><img src="…" alt="…"/><figcaption><span class="credit">Jane Doe/AP</span></figcaption></figure>
+<figure><img src="…" alt="…"/><figcaption>A caption. <span class="credit">(Jane Doe/AP)</span></figcaption></figure>
+```
+
+An image the library had no answer for carries `data-image-unchecked`. An image a blog's rules leave out (`leave_out_images`, `leave_out_credits`) is replaced by an empty marker, `<span data-image-left-out="its caption credits Getty Images" data-image-left-out-url="…"></span>`, which the builder reports. The builder removes all of these attributes and markers.
+
 ## Unknown markup
 
 A platform that meets markup it doesn't know keeps the words and pictures inside, drops the wrapper, and leaves an empty marker naming it: `<span data-markup-unknown="wp-block-x"></span>`. The builder reports each kind once per book, at the first post that has it, and removes the markers.

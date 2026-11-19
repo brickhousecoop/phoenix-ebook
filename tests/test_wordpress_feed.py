@@ -133,7 +133,7 @@ def test_image_block():
                 'src="https://img.example/a.png?w=993" alt="A chart" class="wp-image-14033" '
                 'srcset="https://img.example/a.png 1214w" sizes="(max-width: 993px) 100vw"/>'
                 '<figcaption class="wp-element-caption">Chart: <em>Me</em></figcaption></figure>')
-    assert html == ('<figure><img alt="A chart" src="https://img.example/a.png?w=993" width="993"/>'
+    assert html == ('<figure><img alt="A chart" data-media-id="14033" src="https://img.example/a.png?w=993" width="993"/>'
                     "<figcaption>Chart: <em>Me</em></figcaption></figure>")
 
 

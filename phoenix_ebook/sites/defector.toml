@@ -7,6 +7,8 @@ timezone = "America/New_York"
 # Posts that don't belong in a book (games, podcasts); a post asked for anyway is reported.
 skip_categories = ["Podcasts", "Crosswords"]
 
+# Where image credits and alt text come from (the feed has neither): Defector's public GraphQL API.
+image_details = "https://lede-admin.defector.com/graphql"
 # Photos whose rights for ebooks aren't cleared yet (#51): left out of books and reported.
 leave_out_images = ["GettyImages-*"]     # file-name patterns; * is any characters
 leave_out_credits = ["Getty Images"]     # words in a caption, ignoring capitals

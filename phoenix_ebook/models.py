@@ -32,6 +32,23 @@ class Post:
 
 
 @dataclass
+class ImageDetails:
+    """What a blog's media library says about one image. See ``Platform.image_details``."""
+
+    credit: str = ""  # plain text, e.g. "Jane Doe/Getty Images"
+    alt: str = ""
+    caption: str = ""  # HTML
+
+
+@dataclass
+class PostImages:
+    """Image details for one post. ``None`` for an image means the library had no answer for it."""
+
+    lead: ImageDetails | None = None
+    images: dict[str, ImageDetails | None] = field(default_factory=dict)  # by media id (``data-media-id``)
+
+
+@dataclass
 class SourceSpec:
     """Where a book's posts come from: platform, site URL, processor, and slugs in reading order."""
 

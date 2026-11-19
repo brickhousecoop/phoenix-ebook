@@ -51,6 +51,17 @@ IMAGE_LEFT_OUT = "data-image-left-out"
 IMAGE_LEFT_OUT_URL = "data-image-left-out-url"
 IMAGE_LEFT_OUT_CAPTION = "data-image-left-out-caption"
 
+# ---- Image details from a blog's media library (#51), all removed by the builder ----
+
+# On an <img>: its id in the blog's media library, kept by the platform so its details can be asked for.
+MEDIA_ID = "data-media-id"
+# On an <img>: its credit, as the library gives it. In a figure it's also shown in the caption (CREDIT_CLASS).
+IMAGE_CREDIT = "data-image-credit"
+# On an <img> the library was asked about and had no answer for: its credit isn't known.
+IMAGE_UNCHECKED = "data-image-unchecked"
+# The credit inside a <figcaption>: <span class="credit">.
+CREDIT_CLASS = "credit"
+
 # ---- Changed links (#22): every link the build repairs, unlinks or removes is reported ----
 
 # On a repaired <a>: its original href, and why it changed.

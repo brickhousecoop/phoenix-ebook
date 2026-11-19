@@ -7,6 +7,8 @@ one post (full text in ``content:encoded``), or 404.
 """
 from __future__ import annotations
 
+import html as html_lib
+import json
 import re
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -15,14 +17,16 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import requests
 from bs4 import BeautifulSoup, Tag
 
-from phoenix_ebook.canonical import EMBED_UNKNOWN, MARKUP_UNKNOWN
+from phoenix_ebook.canonical import EMBED_UNKNOWN, MARKUP_UNKNOWN, MEDIA_ID
 from phoenix_ebook.embeds import iframe_card, link_card, social_card
 from phoenix_ebook.errors import AuthError, PostNotFound, SourceUnreachable
-from phoenix_ebook.models import Author, Post
+from phoenix_ebook.models import Author, ImageDetails, Post, PostImages
 from phoenix_ebook.platforms.base import Platform, register_platform
 
 _NS = {"content": "http://purl.org/rss/1.0/modules/content/", "dc": "http://purl.org/dc/elements/1.1/",
        "media": "http://search.yahoo.com/mrss/"}
+IMAGE_DETAILS_BATCH = 10  # posts per request to the blog's GraphQL API
+_IMAGE_FIELDS = ("altText", "caption", "credit")  # credit isn't WordPress's own: Lede adds it
 LEAD_IMAGE_WIDTH = 1600  # the feed links a 564-pixel copy; the build shrinks this one to its own size
 
 # Blocks whose wrapper is only layout: the contents stay, the wrapper goes.
@@ -52,7 +56,7 @@ class WordPressFeedPlatform(Platform):
 
         Embeds, videos and audio become link cards; image, quote, table and gallery blocks
         become plain HTML; emoji pictures become the emoji again; layout wrappers are unwrapped; ``wp-*`` classes and responsive
-        image attributes go. A block it doesn't know keeps its contents and is marked
+        image attributes go. An image keeps its media-library id (``data-media-id``), for ``image_details``. A block it doesn't know keeps its contents and is marked
         (``data-markup-unknown``) for the build report.
         """
         if "wp-" not in html and "<iframe" not in html and "<blockquote" not in html:
@@ -91,6 +95,24 @@ class WordPressFeedPlatform(Platform):
             raise PostNotFound(site, [slug])
         return self._post(item, slug)
 
+    def image_details(self, session: requests.Session, endpoint: str, posts: list[Post]) -> dict[str, PostImages]:
+        """Each post's lead image (by the post's slug) and images in its text (by media id), from the
+        blog's public WPGraphQL API at ``endpoint``: alt text, caption and, where the API has it, credit.
+
+        An image or post the API has no answer for comes back as ``None``. If the API can't be
+        reached, or answers with an error, raises ``SourceUnreachable``.
+        """
+        fields, found = list(_IMAGE_FIELDS), {}
+        wanted = [(post, list(dict.fromkeys(re.findall(rf'{MEDIA_ID}="(\d+)"', post.html)))) for post in posts]
+        wanted = [(post, ids) for post, ids in wanted if post.feature_image or ids]
+        for start in range(0, len(wanted), IMAGE_DETAILS_BATCH):
+            batch = wanted[start:start + IMAGE_DETAILS_BATCH]
+            data = _ask_graphql(session, endpoint, batch, fields)
+            for n, (post, ids) in enumerate(batch):
+                lead = ((data.get(f"p{n}") or {}).get("featuredImage") or {}).get("node")
+                found[post.slug] = PostImages(lead=_details(lead), images={i: _details(data.get(f"m{i}")) for i in ids})
+        return found
+
     def _post(self, item: ET.Element, slug: str) -> Post:
         link = item.findtext("link") or ""
         media = item.find("media:content", _NS)
@@ -107,6 +129,48 @@ class WordPressFeedPlatform(Platform):
             categories=[" ".join(c.text.split()) for c in item.findall("category") if c.text and c.text.strip()],
             raw={"link": link, "guid": item.findtext("guid")},
         )
+
+
+def _details(node: dict | None) -> ImageDetails | None:
+    if not isinstance(node, dict):
+        return None
+    credit = BeautifulSoup(html_lib.unescape(node.get("credit") or ""), "html.parser").get_text(" ")
+    return ImageDetails(credit=" ".join(credit.split()), alt=" ".join(html_lib.unescape(node.get("altText") or "").split()),
+                        caption=(node.get("caption") or "").strip())
+
+
+def _ask_graphql(session: requests.Session, endpoint: str, batch: list, fields: list[str]) -> dict:
+    """One request for a batch of (post, media ids). ``fields`` loses "credit" for good if the API
+    doesn't know it. Raises ``SourceUnreachable`` unless the API answers with data."""
+    host = urlsplit(endpoint).hostname or endpoint
+
+    def stop(why: str) -> SourceUnreachable:
+        return SourceUnreachable(f"the blog's image credits can't be checked right now ({host}: {why}), and it leaves "
+                                 "some images out by their credit, so no book was built. Try again in a few minutes.")
+
+    for _ in range(2):
+        asked = " ".join(fields)
+        parts = [f"p{n}: post(id: {json.dumps(post.slug)}, idType: SLUG) {{ featuredImage {{ node {{ {asked} }} }} }}"
+                 for n, (post, _ids) in enumerate(batch) if post.feature_image]
+        parts += [f"m{i}: mediaItem(id: {i}, idType: DATABASE_ID) {{ {asked} }}"
+                  for i in dict.fromkeys(i for _post, ids in batch for i in ids)]
+        try:
+            r = session.post(endpoint, json={"query": "{ " + " ".join(parts) + " }"}, timeout=30)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise stop(type(exc).__name__) from None
+        try:
+            answer = r.json()
+        except ValueError:
+            answer = None
+        data = answer.get("data") if isinstance(answer, dict) else None
+        if isinstance(data, dict):
+            return data
+        errors = json.dumps(answer.get("errors", "")) if isinstance(answer, dict) else ""
+        if "credit" in fields and re.search(r"Cannot query field \W*credit", errors):
+            fields.remove("credit")  # a blog whose API has no credits: alt text and captions only
+            continue
+        raise stop(f"HTTP {r.status_code}" if not 200 <= r.status_code < 300 else "it didn't answer with image details")
+    raise stop("it didn't answer with image details")
 
 
 def _bare(host: str) -> str:
@@ -234,6 +298,9 @@ def _convert_blocks(soup: BeautifulSoup) -> None:
     for table in soup.find_all("figure", class_="wp-block-table"):
         if table.find("figcaption") is None:
             table.unwrap()
+
+    for img in soup.find_all("img", class_=re.compile(r"^wp-image-\d+$")):
+        img[MEDIA_ID] = next(c for c in img["class"] if re.match(r"wp-image-\d+$", c))[len("wp-image-"):]
 
     for tag in soup.find_all(class_=True):
         if tag.parent is None:  # inside a block already removed
